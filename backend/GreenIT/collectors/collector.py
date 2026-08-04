@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from collectors.hardware.hardware import collect as hardware
-from collectors.windows.windows import collect as windows
+from GreenIT.collectors.hardware.hardware import collect as hardware
+from GreenIT.collectors.windows.windows import collect as windows
 
 
 def collect():
