@@ -44,7 +44,6 @@ def main() -> None:
         "PowerEstimate:\n"
         f"  cpu_watts:      {estimate.cpu_watts:.2f}\n"
         f"  ram_watts:      {estimate.ram_watts:.2f}\n"
-        f"  disk_watts:     {estimate.disk_watts:.2f}\n"
         f"  baseline_watts: {estimate.baseline_watts:.2f}\n"
         f"  total_watts:    {estimate.total_watts:.2f}"
     )

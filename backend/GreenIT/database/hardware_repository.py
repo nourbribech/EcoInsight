@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 
-from GreenIT.models.calibration import CalibrationProfile, CpuCalibration, RamCalibration, DiskCalibration
+from GreenIT.models.calibration import CalibrationProfile, CpuCalibration, RamCalibration
 
 
 class UnknownMachineModelError(Exception):
@@ -45,16 +45,10 @@ class HardwareRepository:
         return CalibrationProfile(
             machine_model=row["machine_model"],
             cpu=CpuCalibration(
-                idle_watts=row["cpu_idle_watts"],
                 watts_per_percent_usage=row["cpu_watts_per_percent_usage"],
             ),
             ram=RamCalibration(
                 watts_per_gb_used=row["ram_watts_per_gb_used"],
-                idle_watts=row["ram_idle_watts"],
-            ),
-            disk=DiskCalibration(
-                watts_per_mb_per_sec=row["disk_watts_per_mb_per_sec"],
-                idle_watts=row["disk_idle_watts"],
             ),
             baseline_watts=row["baseline_watts"],
         )

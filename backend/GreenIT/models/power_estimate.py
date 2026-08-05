@@ -20,9 +20,8 @@ class PowerEstimate:
 
     cpu_watts: float
     ram_watts: float
-    disk_watts: float
     baseline_watts: float
 
     @property
     def total_watts(self) -> float:
-        return self.cpu_watts + self.ram_watts + self.disk_watts + self.baseline_watts
+        return self.cpu_watts + self.ram_watts + self.baseline_watts

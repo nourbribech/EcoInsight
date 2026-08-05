@@ -2,6 +2,9 @@ from datetime import datetime
 from typing import Optional
 
 from GreenIT.collectors.hardware import cpu, memory, disk
+from GreenIT.models.runtime.cpu_runtime import CpuRuntimeMetrics
+from GreenIT.models.runtime.memory_runtime import MemoryRuntimeMetrics
+from GreenIT.models.runtime.disk_runtime import DiskRuntimeMetrics
 from GreenIT.models.snapshot import SystemMetricsSnapshot
 
 
@@ -62,15 +65,33 @@ class MetricsPollingService:
         read_bytes_per_sec = (current_read_bytes - self._previous_disk_read_bytes) / elapsed_seconds
         write_bytes_per_sec = (current_write_bytes - self._previous_disk_write_bytes) / elapsed_seconds
 
-        snapshot = SystemMetricsSnapshot(
-            cpu_usage_percent=cpu_data["usage_percent"],
-            ram_used_bytes=memory_data["virtual"]["used"],
-            ram_total_bytes=memory_data["virtual"]["total"],
-            disk_read_bytes_per_sec=read_bytes_per_sec,
-            disk_write_bytes_per_sec=write_bytes_per_sec,
-            timestamp=now,
+        cpu_metrics = CpuRuntimeMetrics(
+            usage_percent=cpu_data["usage_percent"],
+            actual_frequency_mhz=None,
+            base_frequency_mhz=cpu_data.get("base_frequency_mhz"),
+            processor_utility_percent=None,
+            processor_performance_percent=None,
+            percent_of_max_frequency=None,
         )
 
+        memory_metrics = MemoryRuntimeMetrics(
+            used_bytes=memory_data["virtual"]["used"],
+            total_bytes=memory_data["virtual"]["total"],
+            available_bytes=memory_data["virtual"]["available"],
+            usage_percent=memory_data["virtual"]["percent"],
+        )
+
+        disk_metrics = DiskRuntimeMetrics(
+            read_bytes_per_second=read_bytes_per_sec,
+            write_bytes_per_second=write_bytes_per_sec,
+        )
+
+        snapshot = SystemMetricsSnapshot(
+            cpu=cpu_metrics,
+            memory=memory_metrics,
+            disk=disk_metrics,
+            timestamp=now,
+        )
         self._previous_disk_read_bytes = current_read_bytes
         self._previous_disk_write_bytes = current_write_bytes
         self._previous_timestamp = now

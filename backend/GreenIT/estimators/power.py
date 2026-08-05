@@ -1,34 +1,29 @@
 from GreenIT.models.snapshot import SystemMetricsSnapshot
 from GreenIT.models.calibration import CalibrationProfile
 from GreenIT.models.power_estimate import PowerEstimate
-from GreenIT.models.calibration import CpuCalibration, RamCalibration, DiskCalibration
+from GreenIT.models.calibration import CpuCalibration, RamCalibration
+
 
 _BYTES_PER_GB = 1024 ** 3
 _BYTES_PER_MB = 1024 ** 2
 
 
 class CpuPowerModel:
-    """CPU power: idle floor plus a linear relationship to usage percent."""
+    """CPU power: linear relationship to usage percent."""
 
     def estimate(self, snapshot: SystemMetricsSnapshot, calibration: CpuCalibration) -> float:
-        return calibration.idle_watts + calibration.watts_per_percent_usage * snapshot.cpu_usage_percent
+        return calibration.watts_per_percent_usage * snapshot.cpu.usage_percent
 
 
 class RamPowerModel:
-    """RAM power: idle floor plus a linear relationship to GB used."""
+    """RAM power: linear relationship to GB used."""
 
     def estimate(self, snapshot: SystemMetricsSnapshot, calibration: RamCalibration) -> float:
-        used_gb = snapshot.ram_used_bytes / _BYTES_PER_GB
-        return calibration.idle_watts + calibration.watts_per_gb_used * used_gb
+        used_gb = snapshot.memory.used_bytes / _BYTES_PER_GB
+        return calibration.watts_per_gb_used * used_gb
 
 
-class DiskPowerModel:
-    """Disk power: idle floor plus a linear relationship to combined read+write throughput."""
 
-    def estimate(self, snapshot: SystemMetricsSnapshot, calibration: DiskCalibration) -> float:
-        total_bytes_per_sec = snapshot.disk_read_bytes_per_sec + snapshot.disk_write_bytes_per_sec
-        total_mb_per_sec = total_bytes_per_sec / _BYTES_PER_MB
-        return calibration.idle_watts + calibration.watts_per_mb_per_sec * total_mb_per_sec
 
 
 class PowerEstimator:
@@ -51,16 +46,13 @@ class PowerEstimator:
         self,
         cpu_model: CpuPowerModel = None,
         ram_model: RamPowerModel = None,
-        disk_model: DiskPowerModel = None,
     ):
         self._cpu_model = cpu_model or CpuPowerModel()
         self._ram_model = ram_model or RamPowerModel()
-        self._disk_model = disk_model or DiskPowerModel()
 
     def estimate(self, snapshot: SystemMetricsSnapshot, profile: CalibrationProfile) -> PowerEstimate:
         return PowerEstimate(
             cpu_watts=self._cpu_model.estimate(snapshot, profile.cpu),
             ram_watts=self._ram_model.estimate(snapshot, profile.ram),
-            disk_watts=self._disk_model.estimate(snapshot, profile.disk),
             baseline_watts=profile.baseline_watts,
         )
