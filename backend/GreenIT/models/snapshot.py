@@ -4,6 +4,7 @@ from datetime import datetime
 from GreenIT.models.runtime.cpu_runtime import CpuRuntimeMetrics
 from GreenIT.models.runtime.disk_runtime import DiskRuntimeMetrics
 from GreenIT.models.runtime.memory_runtime import MemoryRuntimeMetrics
+from GreenIT.models.runtime.network_runtime import NetworkRuntimeMetrics
 
 
 @dataclass(frozen=True)
@@ -30,5 +31,7 @@ class SystemMetricsSnapshot:
     memory: MemoryRuntimeMetrics
 
     disk: DiskRuntimeMetrics
+
+    network: NetworkRuntimeMetrics
 
     timestamp: datetime

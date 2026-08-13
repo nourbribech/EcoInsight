@@ -34,3 +34,12 @@ def update_fields(machine_key: str, fields: dict, notes: str = None) -> None:
         cursor = conn.execute(sql, values)
         if cursor.rowcount == 0:
             raise RuntimeError(f"No existing row for machine model {machine_key!r}.")
+
+def get_field(machine_key: str, field: str) -> float:
+    """Read a single calibration_profiles column for a given machine."""
+    sql = f"SELECT {field} FROM calibration_profiles WHERE machine_model = ?"
+    with sqlite3.connect(HARDWARE_DB_PATH) as conn:
+        row = conn.execute(sql, (machine_key,)).fetchone()
+        if row is None:
+            raise RuntimeError(f"No existing row for machine model {machine_key!r}.")
+        return row[0]

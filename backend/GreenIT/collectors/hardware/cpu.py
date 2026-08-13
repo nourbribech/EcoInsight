@@ -6,7 +6,7 @@ def collect():
     frequency = psutil.cpu_freq()
 
     return {
-        "usage_percent": psutil.cpu_percent(interval=0.1),
+        "usage_percent": psutil.cpu_percent(interval=1),
         "per_core_usage": psutil.cpu_percent(interval=0.1, percpu=True),
         "frequency": (
             frequency._asdict()

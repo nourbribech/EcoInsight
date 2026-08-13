@@ -6,6 +6,8 @@ from GreenIT.models.runtime.cpu_runtime import CpuRuntimeMetrics
 from GreenIT.models.runtime.memory_runtime import MemoryRuntimeMetrics
 from GreenIT.models.runtime.disk_runtime import DiskRuntimeMetrics
 from GreenIT.models.snapshot import SystemMetricsSnapshot
+from GreenIT.collectors.hardware import network
+from GreenIT.models.runtime.network_runtime import NetworkRuntimeMetrics
 
 
 class MetricsPollingService:
@@ -37,6 +39,8 @@ class MetricsPollingService:
     def __init__(self):
         self._previous_disk_read_bytes: Optional[int] = None
         self._previous_disk_write_bytes: Optional[int] = None
+        self._previous_network_sent_bytes: Optional[int] = None
+        self._previous_network_recv_bytes: Optional[int] = None
         self._previous_timestamp: Optional[datetime] = None
 
     def poll(self) -> Optional[SystemMetricsSnapshot]:
@@ -45,15 +49,24 @@ class MetricsPollingService:
         cpu_data = cpu.collect()
         memory_data = memory.collect()
         disk_data = disk.collect()
+        network_data = network.collect()
 
         disk_io = disk_data["io"]
         current_read_bytes = disk_io["read_bytes"]
         current_write_bytes = disk_io["write_bytes"]
 
+
+        network_io = network_data["io"]
+        current_sent_bytes = network_io["bytes_sent"]
+        current_recv_bytes = network_io["bytes_recv"]
+
+
         if self._previous_timestamp is None:
             # First tick: nothing to diff against yet.
             self._previous_disk_read_bytes = current_read_bytes
             self._previous_disk_write_bytes = current_write_bytes
+            self._previous_network_sent_bytes = current_sent_bytes
+            self._previous_network_recv_bytes = current_recv_bytes
             self._previous_timestamp = now
             return None
 
@@ -65,6 +78,8 @@ class MetricsPollingService:
         read_bytes_per_sec = (current_read_bytes - self._previous_disk_read_bytes) / elapsed_seconds
         write_bytes_per_sec = (current_write_bytes - self._previous_disk_write_bytes) / elapsed_seconds
 
+        sent_bytes_per_sec = (current_sent_bytes - self._previous_network_sent_bytes) / elapsed_seconds
+        recv_bytes_per_sec = (current_recv_bytes - self._previous_network_recv_bytes) / elapsed_seconds
         cpu_metrics = CpuRuntimeMetrics(
             usage_percent=cpu_data["usage_percent"],
             actual_frequency_mhz=None,
@@ -86,14 +101,22 @@ class MetricsPollingService:
             write_bytes_per_second=write_bytes_per_sec,
         )
 
+        network_metrics = NetworkRuntimeMetrics(
+            bytes_sent_per_second=sent_bytes_per_sec,
+            bytes_received_per_second=recv_bytes_per_sec,
+        )
+
         snapshot = SystemMetricsSnapshot(
             cpu=cpu_metrics,
             memory=memory_metrics,
             disk=disk_metrics,
+            network=network_metrics,
             timestamp=now,
         )
         self._previous_disk_read_bytes = current_read_bytes
         self._previous_disk_write_bytes = current_write_bytes
+        self._previous_network_sent_bytes = current_sent_bytes
+        self._previous_network_recv_bytes = current_recv_bytes
         self._previous_timestamp = now
 
         return snapshot
