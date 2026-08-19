@@ -88,6 +88,7 @@ def audit(settings: dict, observed: dict) -> list[Finding]:
     """
     findings: list[Finding] = []
 
+    findings += _calibration_findings(observed)
     findings += _sleep_findings(settings, observed)
     findings += _display_findings(settings, observed)
     findings += _brightness_findings(observed)
@@ -132,6 +133,37 @@ def _rank_wake_tasks(names: list[str]) -> list[str]:
 
     # Stable sort, so within each group Windows' own ordering survives.
     return sorted(names, key=rank)
+
+
+def _calibration_findings(observed: dict) -> list[Finding]:
+    """
+    Says out loud when the numbers on this dashboard are estimates.
+
+    Surfaced as a finding rather than a quiet badge because it changes how
+    every other figure on the page should be read. A tool that reports
+    watt-hours to one decimal place while silently guessing its coefficients
+    has misled the reader by omission, however correct its arithmetic.
+    """
+    if observed.get("calibration_source") != "estimated":
+        return []
+
+    return [Finding(
+        key="uncalibrated",
+        title="This machine model has not been calibrated",
+        detail=(
+            observed.get("calibration_notes")
+            or "Power coefficients were estimated rather than measured."
+        ),
+        action=(
+            "Figures remain useful for comparing one day with another on this "
+            "machine. Ask IT to run the calibration sweeps on this model to "
+            "make them comparable across the fleet."
+        ),
+        fixable="it",
+        # Medium, not high: the tool still works and the trends are still
+        # real. It is the absolute values that carry an unknown error.
+        severity="medium",
+    )]
 
 
 def _sleep_findings(settings: dict, observed: dict) -> list[Finding]:

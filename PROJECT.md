@@ -514,6 +514,45 @@ of the weekly digest.
       profile with off-hours bars in the alert colour, because the number
       alone is a statistic and the shape is an argument.
 
+**Uncalibrated machines** (shipped 19 Aug)
+
+- [x] **The agent no longer dies on an unmeasured model.** `hardware.db`
+      holds one profile, so on any other machine `UnknownMachineModelError`
+      escaped `EstimationLoop.__init__`, killed the collection thread, and
+      left a normal-looking dashboard that would never fill in. Since the
+      fleet is calibrated model by model, every machine is uncalibrated for a
+      while - a newly issued laptop has to produce labelled estimates in the
+      meantime, not silence.
+
+      The fallback lives in `HardwareService`, not the repository. The
+      repository answers "is there a measured profile for this key", and
+      raising is the right answer to that question; what to DO about the
+      absence is policy, and policy belongs to the layer that resolves
+      profiles for the running application.
+
+      The CPU coefficient is **not** a literature value, because
+      watts-per-CPU-percent is not a property of the processor - it depends
+      on the platform's power management, its cooling, and what Windows calls
+      "100%". Any published figure is somebody else's regression on somebody
+      else's laptop. What transfers is a ratio: the anchor machine
+      (i5-6300U, 15 W) fits 0.1053 W/%, so 10.5 W at full load, **70% of
+      TDP**. TDP is published for every part, so the fallback is
+      `0.70 x TDP / 100`, inferred from the processor suffix (U 15 W, P 28 W,
+      H 45 W, HX 55 W), defaulting to 15 W since most corporate fleets are
+      U-series. Baseline (5 W) and the RAM term genuinely are literature
+      figures - there is no better source for either.
+
+      The ratio rests on ONE anchor point and could be 0.6 or 0.85 elsewhere,
+      so profiles built this way carry `source="estimated"` and raise a
+      dashboard finding. It also self-improves: a second calibrated model
+      lets the ratio be checked instead of assumed, and a third lets it be
+      fitted - at which point the fallback stops being a stopgap and becomes
+      the first data point of the fleet model.
+
+- [ ] **Validate the 70% ratio on a second machine model.** The single
+      largest open question in the fallback, and it needs only one more
+      calibration sweep to answer.
+
 **Deployment**
 
 - [x] **Run the agent at boot.** Done -

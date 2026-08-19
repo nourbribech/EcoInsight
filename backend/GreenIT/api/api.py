@@ -1,5 +1,7 @@
 # api.py
 import time
+
+import pythoncom
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -13,6 +15,9 @@ from GreenIT.estimators import config_audit
 from GreenIT.estimators import equivalences
 from GreenIT.collectors.windows import power_settings
 from GreenIT.collectors.windows import scheduled_tasks
+from GreenIT.database.hardware_repository import HardwareRepository
+from GreenIT.services.hardware_service import HardwareService
+from GreenIT.services.estimation_loop import HARDWARE_DB_PATH
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
@@ -111,6 +116,28 @@ def top_processes(limit: int = 10):
     return [dict(r, label=label_for(r["name"])) for r in rows]
 
 
+def _resolve_profile():
+    """
+    The calibration profile in force, measured or estimated.
+
+    CoInitialize is required because this reaches WMI for the machine model
+    and CPU, and COM state is PER THREAD. FastAPI runs synchronous endpoints
+    on a worker thread from its own pool, which has never initialised COM, so
+    the first request raised x_wmi_uninitialised_thread and the endpoint
+    returned 500 — the same trap agent.py documents for the collection
+    thread, reappearing one layer up.
+
+    Paired with CoUninitialize so the worker thread is left as it was found;
+    it is returned to the pool and reused for unrelated requests.
+    """
+    pythoncom.CoInitialize()
+    try:
+        service = HardwareService(HardwareRepository(HARDWARE_DB_PATH))
+        return service.get_current_machine_profile()
+    finally:
+        pythoncom.CoUninitialize()
+
+
 @app.get("/api/insights")
 def insights():
     """
@@ -126,9 +153,16 @@ def insights():
                        power_settings.collect)
     wake = _cached("wake_tasks", WAKE_TASKS_TTL_SECONDS, scheduled_tasks.collect)
 
+    # Machine identity does not change while the process runs, so this is
+    # resolved once and kept — it costs a WMI round trip.
+    profile = _cached("calibration", 86400, _resolve_profile)
+
     observed = database.get_observed_behaviour(days=7)
     observed["wake_tasks"] = wake["wake_tasks"]
     observed["wake_tasks_available"] = wake["available"]
+    observed["calibration_source"] = profile.source
+    observed["calibration_notes"] = profile.notes
+    observed["machine_model"] = profile.machine_model
 
     findings = [f.to_dict() for f in config_audit.audit(settings, observed)]
     return {"settings": settings, "observed": observed, "findings": findings}

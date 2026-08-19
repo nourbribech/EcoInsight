@@ -1,5 +1,10 @@
+from GreenIT.collectors.hardware import cpu_info
 from GreenIT.collectors.windows import system_identity
-from GreenIT.database.hardware_repository import HardwareRepository
+from GreenIT.database.hardware_repository import (
+    HardwareRepository,
+    UnknownMachineModelError,
+)
+from GreenIT.estimators import generic_calibration
 from GreenIT.models.calibration import CalibrationProfile
 
 
@@ -22,6 +27,35 @@ class HardwareService:
         self._hardware_repository = hardware_repository
 
     def get_current_machine_profile(self) -> CalibrationProfile:
+        """
+        The calibration profile for this machine, measured if it exists and
+        estimated if it does not.
+
+        THE FALLBACK LIVES HERE, NOT IN THE REPOSITORY, on purpose. The
+        repository answers "is there a measured profile for this key", and
+        raising when there is not is the correct answer to that question —
+        see UnknownMachineModelError, which argues the case. Deciding what to
+        DO about the absence is a policy question, and policy belongs to the
+        service that resolves profiles for the running application.
+
+        The policy: never stop collecting. Before this, an uncalibrated model
+        raised out of EstimationLoop.__init__ and killed the collection
+        thread, while the dashboard carried on serving a normal-looking page
+        that would never fill in. Since the fleet is calibrated model by
+        model, every machine is uncalibrated for a while — a newly issued
+        laptop should produce labelled estimates in the meantime, not
+        silence.
+        """
         identity = system_identity.collect()
-        machine_key =system_identity.build_machine_key(identity)
-        return self._hardware_repository.get_calibration_profile(machine_key)
+        machine_key = system_identity.build_machine_key(identity)
+
+        try:
+            return self._hardware_repository.get_calibration_profile(machine_key)
+        except UnknownMachineModelError:
+            pass
+
+        details = cpu_info.get_cpu_info() or {}
+        return generic_calibration.estimated_profile(
+            machine_model=machine_key,
+            cpu_model=details.get("model"),
+        )

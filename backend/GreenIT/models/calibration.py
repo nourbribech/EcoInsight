@@ -35,3 +35,18 @@ class CalibrationProfile:
     cpu: CpuCalibration
     ram: RamCalibration
     baseline_watts: float  # constant draw: motherboard, chipset, fans, etc.
+
+    # WHERE THESE NUMBERS CAME FROM, carried with them.
+    #
+    # "measured"  - battery-discharge sweeps were run on this exact model.
+    # "estimated" - no sweep exists for it, so the coefficients were scaled
+    #               from another machine by TDP.
+    #
+    # Provenance travels with the profile rather than being looked up
+    # separately, because every watt-hour and every gram of CO2eq downstream
+    # inherits it. A figure derived from an estimate must never be presented
+    # with the confidence of a measured one, and the only way to guarantee
+    # that is for the object itself to know.
+    source: str = "measured"
+
+    notes: str = ""
