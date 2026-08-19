@@ -11,6 +11,8 @@ from GreenIT.estimators.power import PowerEstimator
 from GreenIT.estimators.energy import EnergyEstimator
 from GreenIT.estimators.carbon import CarbonEstimator
 from GreenIT.estimators.recommendations import RecommendationEngine
+from GreenIT.collectors.hardware import processes
+from GreenIT.estimators.process_attribution import attribute_cpu_watts
 
 HARDWARE_DB_PATH = Path(__file__).resolve().parent.parent / "database" / "data" / "hardware.db"
 
@@ -51,28 +53,15 @@ class EstimationLoop:
         self._last_telemetry_write: Optional[datetime] = None
         database.initialize_database()
 
-    def tick(self):
-        """One iteration. Returns (power, energy, carbon) or None if this tick had nothing to report yet."""
-        snapshot = self._polling_service.poll()
-        if snapshot is None:
-            return None
+        # Prime psutil's per-process CPU counters. The first reading for each
+        # process has no previous value to diff against and comes back 0.0,
+        # so discarding one here means the first real sample is meaningful
+        # rather than an empty table.
+        processes.collect()
 
-        recommendations = self._maybe_save_telemetry(snapshot)
+    PROCESS_SAMPLE_LIMIT = 10
 
-        self._maybe_save_telemetry(snapshot)
-
-        power = self._power_estimator.estimate(snapshot, self._calibration_profile)
-
-        energy = self._energy_estimator.estimate(power, snapshot.timestamp)
-        if energy is None:
-            return None
-
-        carbon = self._carbon_estimator.estimate(energy)
-        database.save_measurement(snapshot.timestamp, power, energy, carbon)
-
-        return power, energy, carbon, recommendations
-
-    def _maybe_save_telemetry(self, snapshot) -> None:
+    def _maybe_save_telemetry(self, snapshot, power) -> list:
         """Writes a telemetry snapshot at most once per TELEMETRY_INTERVAL_SECONDS."""
         if (
                 self._last_telemetry_write is not None
@@ -83,7 +72,53 @@ class EstimationLoop:
 
         database.save_telemetry_snapshot(snapshot)
         self._last_telemetry_write = snapshot.timestamp
-        return self._recommendation_engine.evaluate(snapshot)
+
+        # Sampled on this slower cadence too — walking every process is far
+        # more expensive than the handful of counters the snapshot needs.
+        raw = processes.collect(limit=self.PROCESS_SAMPLE_LIMIT)
+        attributed = attribute_cpu_watts(
+            raw["processes"], raw["total_cpu_percent"], power.cpu_watts
+        )
+        database.save_process_samples(snapshot.timestamp, attributed)
+
+        # The same sample feeds both the dashboard table and the messages, so
+        # a recommendation can never name a process that the Top Consumers
+        # panel is not also showing at that moment.
+        recommendations = self._recommendation_engine.evaluate(
+            snapshot,
+            power.total_watts,
+            processes=attributed,
+            total_cpu_percent=raw["total_cpu_percent"],
+        )
+
+        # Persistence lives here, not in the engine. The engine computes and
+        # holds the elevated/reminder state; the loop is what hands results to
+        # the database — same division as save_measurement() in tick().
+        # Without this the recommendations table stays permanently empty and
+        # /api/recommendations returns [] no matter what the engine detects.
+        for recommendation in recommendations:
+            database.save_recommendation(recommendation)
+
+        return recommendations
+
+    def tick(self):
+        """One iteration. Returns (power, energy, carbon) or None if this tick had nothing to report yet."""
+        snapshot = self._polling_service.poll()
+        if snapshot is None:
+            return None
+
+        power = self._power_estimator.estimate(snapshot, self._calibration_profile)
+        recommendations = self._maybe_save_telemetry(snapshot, power)
+        energy = self._energy_estimator.estimate(power, snapshot.timestamp)
+        if energy is None:
+            return None
+
+        carbon = self._carbon_estimator.estimate(energy)
+        database.save_measurement(snapshot.timestamp, power, energy, carbon)
+
+        return power, energy, carbon, recommendations
+
+
 
     def run_forever(self, interval_seconds: float = None) -> None:
         """Blocking loop. Call from a background thread in a real app."""
@@ -91,6 +126,8 @@ class EstimationLoop:
         print(f"Starting estimation loop for: {self._calibration_profile.machine_model}")
 
         while True:
+            started_at = time.monotonic()
+
             result = self.tick()
             if result is not None:
                 power, energy, carbon, recommendations = result
@@ -99,8 +136,20 @@ class EstimationLoop:
                     f"{energy.cumulative_watt_hours:8.4f} Wh total | "
                     f"{carbon.cumulative_kg_co2eq * 1000:8.3f} gCO2eq total"
                 )
-            for rec in recommendations:
-                print(f"  [!] {rec.message}")
+                # Was outside this block, which raised NameError on the first
+                # (warm-up) tick, when tick() returns None and `recommendations`
+                # was never bound.
+                for rec in recommendations:
+                    print(f"  [!] {rec.message}")
+
+            # `interval` is a floor, not an added delay. poll() already blocks
+            # ~1.1s inside psutil.cpu_percent(interval=1), so sleeping the full
+            # interval on top would stretch ticks well past the intended
+            # cadence. Sleeping only the remainder keeps the loop honest if
+            # collection ever gets faster, and is a no-op while it doesn't.
+            elapsed = time.monotonic() - started_at
+            if elapsed < interval:
+                time.sleep(interval - elapsed)
 
 if __name__ == "__main__":
     EstimationLoop().run_forever()
