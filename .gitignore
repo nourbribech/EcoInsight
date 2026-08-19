@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editors / IDE
+.idea/
+.vscode/
+*.swp
+
+# Node
+node_modules/
+dist/
+
+# --- runtime data -----------------------------------------------------------
+#
+# ecoinsight.db is written by the estimation loop roughly every 1.5 seconds and
+# reached 9 MB within a week. Tracking it makes every `git status` dirty, every
+# pull a conflict, and every commit ~9 MB heavier. It is this machine's
+# measurement history, not source.
+backend/GreenIT/data/*.db
+backend/GreenIT/data/*.db-journal
+backend/GreenIT/data/*.backup-*.db
+backend/GreenIT/data/agent.log
+
+# hardware.db is deliberately NOT ignored: it holds the per-machine
+# calibration profile, it is 20 KB, and it changes only when somebody reruns a
+# sweep. Losing it means recalibrating from scratch.
+
+# DataGrip / database tooling leaves these behind.
+identifier.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Scratch
+temp.py
+*.log

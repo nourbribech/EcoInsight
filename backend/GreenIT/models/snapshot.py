@@ -35,3 +35,27 @@ class SystemMetricsSnapshot:
     network: NetworkRuntimeMetrics
 
     timestamp: datetime
+
+    # Seconds since the last keyboard/mouse input, from the Windows
+    # GetLastInputInfo API. A bare scalar rather than a SessionRuntimeMetrics
+    # object because it is currently the only session field anyone consumes —
+    # promote it to its own model if a second one (locked, active user)
+    # arrives.
+    #
+    # Optional with a default so snapshots built by tests and older callers
+    # keep working, and because a machine with no input device or a failed
+    # API call should report "unknown" rather than a fabricated 0.
+    idle_seconds: float | None = None
+
+    # Display state. Optional and defaulted for the same reason as
+    # idle_seconds: a desktop with no readable panel, or a monitor that does
+    # not answer DDC/CI, must report "unknown" rather than a fabricated zero —
+    # a brightness of 0 % and a brightness we could not read are very
+    # different facts.
+    #
+    # Sampled far less often than the rest of the snapshot: reading brightness
+    # costs ~170 ms (it talks to each monitor over DDC/CI), which is 11 % of a
+    # poll cycle. See MetricsPollingService.DISPLAY_REFRESH_SECONDS.
+    brightness_percent: int | None = None
+
+    monitor_count: int | None = None

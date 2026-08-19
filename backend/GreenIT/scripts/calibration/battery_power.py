@@ -13,10 +13,31 @@ import psutil
 import wmi
 
 
+_connection = None
+
+
+def _wmi_connection():
+    """
+    One WMI connection per process, reused.
+
+    Building a wmi.WMI() object is expensive — it negotiates COM and walks the
+    namespace, costing tens of milliseconds of CPU. Doing that once per
+    reading was measurable work happening *during* a power measurement, so the
+    act of sampling raised the number being sampled. Caching removes the
+    instrument from its own reading.
+    """
+    global _connection
+    if _connection is None:
+        # Calibration scripts run on the main thread, where Python has already
+        # initialised COM. The agent, which does not, calls CoInitialize
+        # itself — see agent.py.
+        _connection = wmi.WMI(namespace="root\\wmi")
+    return _connection
+
+
 def read_discharge_watts() -> float:
     """Current total system power draw (W), from the battery's fuel gauge."""
-    c = wmi.WMI(namespace="root\\wmi")
-    battery = c.BatteryStatus()[0]
+    battery = _wmi_connection().BatteryStatus()[0]
     if battery.PowerOnline:
         raise RuntimeError("Laptop is plugged in — unplug it before calibrating.")
     return battery.DischargeRate / 1000.0  # mW -> W
