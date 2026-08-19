@@ -51,24 +51,91 @@ export function RecommendationsFeed({ recommendations, error, windowHours }: Pro
   }
 
   return (
-    <ul className="rec-feed">
-      {recommendations.map((rec) => {
-        const kind = KINDS[rec.metric] ?? { label: rec.metric, severity: 'low' as const }
-        return (
-          <li key={rec.id} className={`rec rec-${kind.severity}`}>
-            <div className="rec-meta">
-              <span className="rec-time">
-                {new Date(rec.timestamp).toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </span>
-              <span className="rec-metric">{kind.label}</span>
-            </div>
-            <p className="rec-message">{rec.message}</p>
-          </li>
-        )
-      })}
-    </ul>
+    <div className="rec-feed">
+      {groupByDay(recommendations).map((group) => (
+        <section className="rec-day" key={group.key}>
+          {/*
+            Every row used to show only a clock time. Inside a 1h window that
+            reads fine; across 7 days it produced fifty rows of bare times
+            with nothing to say which were Monday and which were Friday.
+            Grouping puts the date in one place per day instead of repeating
+            it on every row, which is also how any log or message feed does it.
+          */}
+          <h3 className="rec-day-label">{group.label}</h3>
+          <ul className="rec-list">
+            {group.items.map((rec) => {
+              const kind =
+                KINDS[rec.metric] ?? { label: rec.metric, severity: 'low' as const }
+              return (
+                <li key={rec.id} className={`rec rec-${kind.severity}`}>
+                  <div className="rec-meta">
+                    <span className="rec-time">
+                      {new Date(rec.timestamp).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                    <span className="rec-metric">{kind.label}</span>
+                  </div>
+                  <p className="rec-message">{rec.message}</p>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      ))}
+    </div>
   )
+}
+
+interface DayGroup {
+  key: string
+  label: string
+  items: Recommendation[]
+}
+
+/**
+ * Splits the feed into calendar days, newest first.
+ *
+ * Grouping is done on the LOCAL date, not on the ISO string, because the
+ * server stores local timestamps and a naive `slice(0, 10)` would put
+ * anything after midnight in the wrong bucket for any reader not in the
+ * machine's own timezone.
+ */
+function groupByDay(recommendations: Recommendation[]): DayGroup[] {
+  const groups: DayGroup[] = []
+
+  for (const rec of recommendations) {
+    const date = new Date(rec.timestamp)
+    const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+
+    const last = groups[groups.length - 1]
+    // The list arrives newest-first and in order, so a day is finished as
+    // soon as a different one appears — no need to sort or index by key.
+    if (last && last.key === key) {
+      last.items.push(rec)
+    } else {
+      groups.push({ key, label: dayLabel(date), items: [rec] })
+    }
+  }
+
+  return groups
+}
+
+function dayLabel(date: Date): string {
+  const startOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+
+  const daysAgo = Math.round(
+    (startOfDay(new Date()) - startOfDay(date)) / 86_400_000,
+  )
+
+  if (daysAgo === 0) return 'Today'
+  if (daysAgo === 1) return 'Yesterday'
+  // Within the last week the weekday is the fastest thing to recognise;
+  // beyond that it stops being unambiguous, so the date carries it.
+  if (daysAgo < 7) {
+    return date.toLocaleDateString([], { weekday: 'long' })
+  }
+  return date.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })
 }

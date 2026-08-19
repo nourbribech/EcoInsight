@@ -198,6 +198,26 @@ body {
 /* --- recommendations feed --- */
 
 .rec-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* One date per day instead of a bare clock time on every row: across a
+   7-day window the feed was fifty times with nothing to separate Monday
+   from Friday. */
+.rec-day-label {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--muted);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--grid);
+}
+
+.rec-list {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -529,3 +549,20 @@ body {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* --- recommendations feed, grouped by day --- */
+
+.rec-day + .rec-day { margin-top: 4px; }
+
+.rec-day-label {
+  margin: 12px 0 2px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--muted);
+}
+
+.rec-day:first-child .rec-day-label { margin-top: 0; }
+
+.rec-list { margin: 0; padding: 0; list-style: none; }
