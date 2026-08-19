@@ -1,0 +1,531 @@
+/*
+ * PLACEHOLDER LAYOUT ONLY — enough structure to read the data while we work
+ * on logic. Colours and spacing are deliberately unopinionated; the real
+ * visual design comes later.
+ */
+
+.dashboard {
+  --panel: #1b1d23;
+  --border: #2e303a;
+  --grid: #262932;
+  --gap: rgba(255, 255, 255, 0.045);
+  --muted: #8b93a7;
+  --text: #e8eaf0;
+
+  /* Component colours, reused by the chart and the legend swatches. */
+  --baseline: #556070;
+  --cpu: #4a9eff;
+  --ram: #b06cf0;
+  --disk-read: #35c98a;
+  --disk-write: #e8973f;
+  --net-recv: #3ec8d8;
+  --net-sent: #e05f9e;
+  --brightness: #e8c547;
+
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px 20px 48px;
+  color: var(--text);
+  font: 14px/1.45 ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+
+/* --- top bar --- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.brand-name {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.status {
+  font-size: 12px;
+  font-family: ui-monospace, Consolas, monospace;
+  color: var(--muted);
+}
+
+.status-live::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #3ddc84;
+}
+
+.status-error {
+  color: #ff6b6b;
+}
+
+.window-picker {
+  display: flex;
+  gap: 2px;
+}
+
+.window-picker button {
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.window-picker button.active {
+  color: var(--text);
+  background: var(--panel);
+  border-color: #3d4150;
+}
+
+/* --- stat tiles --- */
+
+.stats-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px;
+  margin: 16px 0;
+  background: var(--border);
+  border: 1px solid var(--border);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  background: var(--panel);
+}
+
+.stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+
+.stat-value {
+  font-size: 22px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-detail {
+  font-size: 11px;
+  font-family: ui-monospace, Consolas, monospace;
+  color: var(--muted);
+}
+
+/* --- chart panel --- */
+
+.panel {
+  padding: 12px 14px 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.panel-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.legend {
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+}
+
+.swatch-baseline   { background: var(--baseline); }
+.swatch-cpu        { background: var(--cpu); }
+.swatch-ram        { background: var(--ram); }
+.swatch-disk-read  { background: var(--disk-read); }
+.swatch-disk-write { background: var(--disk-write); }
+.swatch-net-recv   { background: var(--net-recv); }
+.swatch-net-sent   { background: var(--net-sent); }
+.swatch-brightness { background: var(--brightness); }
+
+.chart-empty {
+  padding: 60px 0;
+  text-align: center;
+  color: var(--muted);
+}
+
+body {
+  margin: 0;
+  background: #14161b;
+}
+
+.legend .muted {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.panel + .panel {
+  margin-top: 14px;
+}
+
+/* --- recommendations feed --- */
+
+.rec-feed {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rec {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 0 9px 11px;
+  border-left: 2px solid var(--border);
+}
+
+.rec + .rec {
+  border-top: 1px solid var(--grid);
+}
+
+.rec-high   { border-left-color: #ff6b6b; }
+.rec-medium { border-left-color: #e8973f; }
+.rec-low    { border-left-color: #6b7383; }
+
+.rec-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 11px;
+  font-family: ui-monospace, Consolas, monospace;
+  color: var(--muted);
+}
+
+.rec-metric {
+  padding: 1px 6px;
+  color: var(--text);
+  background: var(--grid);
+}
+
+.rec-sigma {
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-message {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.empty-hint {
+  max-width: 52ch;
+  margin: 8px auto 0;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.75;
+}
+
+.process-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.process-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.process-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--grid);
+}
+
+.process-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.process-table .instances {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.process-table .watts {
+  position: relative;
+  min-width: 110px;
+}
+
+.process-table .bar {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  background: var(--cpu);
+  opacity: 0.22;
+  border-radius: 2px;
+}
+
+.process-table .bar-label {
+  position: relative;
+}
+
+/* --- period digest --- */
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 10px;
+}
+
+.summary-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.summary-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  background: #1f222a;
+  border-left: 2px solid var(--border);
+}
+
+/* The avoidable figure is the only one the user can act on, so it is the
+   only one that gets colour. */
+.summary-figure-alert { border-left-color: #e8973f; }
+
+.summary-value {
+  font-size: 24px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-days {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 76px;
+}
+
+.summary-day {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+}
+
+.summary-bar-track {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  width: 100%;
+}
+
+.summary-bar {
+  width: 100%;
+  min-height: 2px;
+  background: var(--cpu);
+  opacity: 0.55;
+}
+
+.summary-day-label {
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-apps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.summary-apps-label {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.6px;
+}
+
+.summary-app b {
+  margin-left: 5px;
+  color: var(--text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- configuration findings --- */
+
+.findings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.finding {
+  padding: 10px 0 10px 11px;
+  border-left: 2px solid var(--border);
+}
+
+.finding + .finding { border-top: 1px solid var(--grid); }
+
+.finding-high   { border-left-color: #ff6b6b; }
+.finding-medium { border-left-color: #e8973f; }
+.finding-ok     { border-left-color: #3ddc84; }
+
+.finding-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.finding-title { font-size: 13px; font-weight: 600; }
+
+.finding-owner {
+  padding: 1px 7px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--grid);
+  color: var(--muted);
+}
+
+/* "needs IT" is deliberately the muted one: it tells the user to stop
+   looking, which is useful but not a call to action. */
+.finding-owner-you { color: #7ee2a8; }
+.finding-owner-it  { color: #8b93a7; }
+
+.finding-detail {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--text);
+  opacity: 0.85;
+  max-width: 78ch;
+}
+
+.finding-action {
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  color: var(--cpu);
+  max-width: 78ch;
+}
+
+/* --- equivalences --- */
+
+.equivalences {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.equivalences-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.equivalence b {
+  color: var(--text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.equivalence-sep { margin-right: 9px; font-style: normal; opacity: 0.5; }
+
+/* Carbon comparisons carry a second emission factor, so they are softer than
+   the energy ones. Marked rather than mixed in silently. */
+.equivalence-kind { font-style: normal; opacity: 0.6; font-size: 11px; }
+
+/* --- hour-of-day profile --- */
+
+.offhours { display: flex; flex-direction: column; gap: 7px; }
+
+.offhours-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.offhours-figure {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.offhours-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 58px;
+}
+
+.offhours-hour {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  height: 100%;
+}
+
+.offhours-track { display: flex; flex: 1; align-items: flex-end; width: 100%; }
+
+.offhours-bar {
+  width: 100%;
+  min-height: 1px;
+  background: var(--cpu);
+  opacity: 0.5;
+}
+
+.offhours-bar-off { background: #e8973f; opacity: 0.75; }
+
+.offhours-tick {
+  font-size: 9px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
