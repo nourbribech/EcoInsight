@@ -14,8 +14,10 @@ from GreenIT.estimators.process_catalog import label_for
 from GreenIT.estimators import config_audit
 from GreenIT.estimators import equivalences
 from GreenIT.estimators import rating
+from GreenIT.estimators import lifecycle
 from GreenIT.collectors.windows import power_settings
 from GreenIT.collectors.windows import scheduled_tasks
+from GreenIT.collectors.windows import battery_health
 from GreenIT.database.hardware_repository import HardwareRepository
 from GreenIT.services.hardware_service import HardwareService
 from GreenIT.services.estimation_loop import HARDWARE_DB_PATH
@@ -117,26 +119,35 @@ def top_processes(limit: int = 10):
     return [dict(r, label=label_for(r["name"])) for r in rows]
 
 
-def _resolve_profile():
+def _with_com(produce):
     """
-    The calibration profile in force, measured or estimated.
+    Runs `produce` with COM initialised on this thread.
 
-    CoInitialize is required because this reaches WMI for the machine model
-    and CPU, and COM state is PER THREAD. FastAPI runs synchronous endpoints
-    on a worker thread from its own pool, which has never initialised COM, so
-    the first request raised x_wmi_uninitialised_thread and the endpoint
-    returned 500 — the same trap agent.py documents for the collection
-    thread, reappearing one layer up.
+    COM state is PER THREAD, and FastAPI runs synchronous endpoints on a
+    worker from its own pool which has never initialised it — so any WMI call
+    raises x_wmi_uninitialised_thread. The same trap agent.py documents for
+    the collection thread, one layer up.
 
-    Paired with CoUninitialize so the worker thread is left as it was found;
-    it is returned to the pool and reused for unrelated requests.
+    EVERY WMI CALL IN A REQUEST HAS TO GO THROUGH HERE. The first version
+    wrapped only the profile lookup, and its CoUninitialize then tore COM down
+    for the battery read that followed on the same thread. That failure was
+    invisible: battery_health catches broadly on purpose, so a desktop with no
+    battery and a torn-down COM apartment both report "no battery available".
+    A defensive catch in the collector hid a real bug in the caller.
     """
     pythoncom.CoInitialize()
     try:
-        service = HardwareService(HardwareRepository(HARDWARE_DB_PATH))
-        return service.get_current_machine_profile()
+        return produce()
     finally:
+        # Paired, so the pooled thread is left as it was found before being
+        # handed to an unrelated request.
         pythoncom.CoUninitialize()
+
+
+def _resolve_profile():
+    """The calibration profile in force, measured or estimated."""
+    service = HardwareService(HardwareRepository(HARDWARE_DB_PATH))
+    return service.get_current_machine_profile()
 
 
 @app.get("/api/insights")
@@ -156,17 +167,46 @@ def insights():
 
     # Machine identity does not change while the process runs, so this is
     # resolved once and kept — it costs a WMI round trip.
-    profile = _cached("calibration", 86400, _resolve_profile)
+    profile = _cached("calibration", 86400, lambda: _with_com(_resolve_profile))
 
     observed = database.get_observed_behaviour(days=7)
     observed["wake_tasks"] = wake["wake_tasks"]
     observed["wake_tasks_available"] = wake["available"]
+    battery = _cached("battery", 3600, lambda: _with_com(battery_health.collect))
+    observed["battery_health_percent"] = battery["health_percent"]
+    observed["battery"] = battery
     observed["calibration_source"] = profile.source
     observed["calibration_notes"] = profile.notes
     observed["machine_model"] = profile.machine_model
 
     findings = [f.to_dict() for f in config_audit.audit(settings, observed)]
     return {"settings": settings, "observed": observed, "findings": findings}
+
+
+@app.get("/api/lifecycle")
+def machine_lifecycle(days: int = 7):
+    """
+    Manufacturing carbon against operating carbon, plus battery wear.
+
+    Separate from /api/summary because it answers a different question on a
+    different timescale: the summary is about this week, this is about whether
+    the machine should still be here in three years.
+    """
+    profile = _cached("calibration", 86400, lambda: _with_com(_resolve_profile))
+    battery = _cached("battery", 3600, lambda: _with_com(battery_health.collect))
+
+    period = database.get_period_summary(days)
+    # Scale the measured period to a year. Under-counts whenever the agent was
+    # not running for the whole window, which biases the comparison AGAINST
+    # the point being made - real operating emissions are higher, so the
+    # manufacturing multiple shown here is a floor.
+    annual_kg = period["current"]["grams_co2eq"] / 1000 * (365 / days)
+
+    result = lifecycle.assess(profile.machine_model, annual_kg).to_dict()
+    result["machine_model"] = profile.machine_model
+    result["battery"] = battery
+    result["measured_days"] = days
+    return result
 
 
 @app.get("/api/summary")

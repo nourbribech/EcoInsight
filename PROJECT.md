@@ -553,6 +553,34 @@ of the weekly digest.
       largest open question in the fallback, and it needs only one more
       calibration sweep to answer.
 
+**Lifecycle carbon** (shipped 19 Aug)
+
+- [x] **Manufacturing carbon and battery health.** Every other panel measures
+      electricity, and for a laptop electricity is the small number. Measured
+      here: 12.9 kg CO2eq/year operating against roughly 300 kg to
+      manufacture - **about 23 years of operation, 82% of lifetime carbon**.
+      Keeping the machine one year longer avoids ~50 kg, more than 3.9 years
+      of its own electricity.
+
+      Battery health comes from `root\wmi` BatteryStaticData rather than
+      Win32_Battery, which reports DesignCapacity and FullChargeCapacity as
+      None on modern machines (verified - both null here). **This machine is
+      at 46%**, and battery wear is the usual trigger for replacing a laptop
+      that still works, which makes it the highest-leverage row on the
+      dashboard despite having nothing to do with electricity.
+
+      The embodied figure is the softest number in the project: a
+      manufacturer's estimate, not a measurement, and published PCFs carry
+      wide uncertainty of their own. The panel states its provenance, shows a
+      200-400 kg class range when no datasheet is on file, and notes that
+      operating emissions are scaled from a partial window so the multiple is
+      a floor.
+
+- [ ] **Get the real PCF for the Latitude 7480.** Dell publishes per-model
+      Product Carbon Footprint datasheets; `_EMBODIED_KG_CO2E` in
+      lifecycle.py is deliberately empty so no guess sits under a real model
+      name pretending to be a citation.
+
 **Deployment**
 
 - [x] **Run the agent at boot.** Done -

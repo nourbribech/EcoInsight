@@ -162,3 +162,27 @@ export interface Insights {
   settings: Record<string, unknown>
   observed: Record<string, unknown>
 }
+
+/** GET /api/lifecycle — manufacturing carbon against operating carbon. */
+export interface Lifecycle {
+  machine_model: string
+  embodied_kg: number
+  /** True when no manufacturer datasheet is on file and a class figure was used. */
+  embodied_is_estimate: boolean
+  embodied_low_kg: number
+  embodied_high_kg: number
+  annual_operating_kg: number
+  /** Null until enough operating data exists to divide by. */
+  years_of_operation_equivalent: number | null
+  manufacturing_share: number | null
+  one_more_year_saves_kg: number
+  one_more_year_in_operating_years: number | null
+  service_life_years: number
+  measured_days: number
+  battery: {
+    available: boolean
+    design_mwh: number | null
+    full_charge_mwh: number | null
+    health_percent: number | null
+  }
+}

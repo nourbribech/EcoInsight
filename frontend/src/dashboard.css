@@ -600,3 +600,78 @@ body {
 .tier-poor .tier-badge { color: #ff6b6b; }
 .tier-unrated   { border-left-color: #6b7383; }
 .tier-unrated .tier-badge { color: var(--muted); }
+
+/* --- lifecycle --- */
+
+.lifecycle { display: flex; flex-direction: column; gap: 11px; padding-bottom: 8px; }
+
+.lifecycle-headline {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  max-width: 72ch;
+}
+
+.lifecycle-headline b { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.lifecycle-bar {
+  display: flex;
+  height: 30px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.lifecycle-embodied,
+.lifecycle-operating {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0 9px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Manufacturing is the dominant share and the one nobody thinks about, so it
+   carries the weight; electricity is the sliver everything else measures. */
+.lifecycle-embodied { background: #8a6a3f; color: #f3e7d5; }
+.lifecycle-operating { background: var(--grid); color: var(--muted); }
+
+.lifecycle-caption,
+.lifecycle-source {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 78ch;
+}
+
+.lifecycle-source { opacity: 0.8; }
+
+.lifecycle-lever,
+.lifecycle-battery {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  padding: 9px 12px;
+  background: #1f222a;
+  border-left: 2px solid var(--border);
+  font-size: 13px;
+}
+
+.lifecycle-lever { border-left-color: #8a6a3f; }
+
+.lifecycle-lever-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+
+.lifecycle-health { font-weight: 600; font-variant-numeric: tabular-nums; }
+.lifecycle-health-good { color: #3ddc84; }
+.lifecycle-health-fair { color: #e8973f; }
+.lifecycle-health-poor { color: #ff6b6b; }

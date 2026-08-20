@@ -9,6 +9,7 @@ import { ProcessTable } from './components/ProcessTable'
 import { RecommendationsFeed } from './components/RecommendationsFeed'
 import { SummaryPanel } from './components/SummaryPanel'
 import { InsightsPanel } from './components/InsightsPanel'
+import { LifecyclePanel } from './components/LifecyclePanel'
 import type { Recommendation, Telemetry } from './types/api'
 import './dashboard.css'
 
@@ -108,6 +109,23 @@ function App() {
           </div>
         </div>
         <SummaryPanel days={7} />
+      </section>
+
+      {/*
+        Lifecycle sits directly under the weekly digest, and that placement is
+        the argument: the digest reports grams, this reports the hundreds of
+        kilograms the machine cost before it was plugged in. Putting it lower
+        would let the reader finish the page believing weekly grams are the
+        whole story.
+      */}
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Before it was switched on</h2>
+          <div className="legend">
+            <span className="muted">manufacturing carbon · battery health</span>
+          </div>
+        </div>
+        <LifecyclePanel days={7} />
       </section>
 
       {/*

@@ -88,6 +88,7 @@ def audit(settings: dict, observed: dict) -> list[Finding]:
     """
     findings: list[Finding] = []
 
+    findings += _battery_findings(observed)
     findings += _calibration_findings(observed)
     findings += _sleep_findings(settings, observed)
     findings += _display_findings(settings, observed)
@@ -133,6 +134,65 @@ def _rank_wake_tasks(names: list[str]) -> list[str]:
 
     # Stable sort, so within each group Windows' own ordering survives.
     return sorted(names, key=rank)
+
+
+BATTERY_POOR_PERCENT = 60
+BATTERY_FAIR_PERCENT = 80
+
+
+def _battery_findings(observed: dict) -> list[Finding]:
+    """
+    Battery wear, which is a carbon finding rather than a convenience one.
+
+    A worn battery is the most common reason a working laptop gets replaced,
+    and manufacturing a replacement emits more than a decade of running the
+    old one. That makes this the highest-leverage row on the whole dashboard
+    even though it has nothing to do with electricity.
+
+    The advice is about charging habits rather than replacement, because
+    replacement is the outcome worth avoiding.
+    """
+    health = observed.get("battery_health_percent")
+    if health is None:
+        return []
+
+    if health < BATTERY_POOR_PERCENT:
+        return [Finding(
+            key="battery_worn",
+            title=f"Battery is at {health:.0f}% of its original capacity",
+            detail=(
+                "Worn batteries are the usual trigger for replacing a laptop "
+                "that still works, and manufacturing a replacement emits more "
+                "carbon than a decade of running this one. Keeping the machine "
+                "in service is worth more than any energy saving on this page."
+            ),
+            action=(
+                "Avoid leaving it plugged in at 100% for long stretches - Dell "
+                "Power Manager and equivalents can cap charging around 80%. If "
+                "runtime is already impractical, ask IT for a battery "
+                "replacement rather than a new machine."
+            ),
+            fixable="you",
+            severity="high",
+        )]
+
+    if health < BATTERY_FAIR_PERCENT:
+        return [Finding(
+            key="battery_wearing",
+            title=f"Battery is at {health:.0f}% of its original capacity",
+            detail=(
+                "Still serviceable, but wear accelerates when a battery is "
+                "held at full charge and warm."
+            ),
+            action=(
+                "Capping charge near 80% in your laptop vendor's power tool "
+                "slows this down considerably."
+            ),
+            fixable="you",
+            severity="medium",
+        )]
+
+    return []
 
 
 def _calibration_findings(observed: dict) -> list[Finding]:
