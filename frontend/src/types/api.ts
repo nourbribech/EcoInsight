@@ -116,6 +116,22 @@ export interface PeriodSummary {
    *  too small for any comparison to be meaningful. */
   equivalences: { label: string; value: number; kind: 'energy' | 'carbon' }[]
   offhours: OffHours
+  /**
+   * Null when idle tracking has not run for `rating_minimum_days`. Absent is
+   * rendered explicitly, never as a passing grade.
+   */
+  rating: WasteRating | null
+  rating_minimum_days: number
+}
+
+/** A tier for how much of the period's energy was avoidable. */
+export interface WasteRating {
+  tier: 'excellent' | 'good' | 'fair' | 'poor'
+  label: string
+  detail: string
+  share: number
+  /** Share needed to reach the next band up; null when already at the top. */
+  next_tier_share: number | null
 }
 
 /** Energy drawn outside working hours, plus the shape of a typical day. */

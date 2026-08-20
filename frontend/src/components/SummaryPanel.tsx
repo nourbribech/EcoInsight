@@ -1,5 +1,5 @@
 import { usePolling } from '../hooks/usePolling'
-import type { OffHours, PeriodSummary } from '../types/api'
+import type { OffHours, PeriodSummary, WasteRating } from '../types/api'
 
 /** Nothing here changes faster than the telemetry cadence. */
 const POLL_MS = 60_000
@@ -52,6 +52,12 @@ export function SummaryPanel({ days }: { days: number }) {
           highlight
         />
       </div>
+
+      <WasteTier
+        rating={data.rating}
+        minimumDays={data.rating_minimum_days}
+        daysTracked={data.days_tracked}
+      />
 
       {data.equivalences.length > 0 && (
         /*
@@ -182,6 +188,47 @@ function OffHoursProfile({ offhours }: { offhours: OffHours }) {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+
+/**
+ * The period's tier, or an explicit statement that there is not enough
+ * evidence for one.
+ *
+ * It grades the WASTE SHARE, not the energy total. Grading consumption would
+ * grade how much somebody worked and how much they were at their desk, and
+ * hand the best score to whoever was on leave. A ratio is neutral to both:
+ * working more cannot hurt it, and it is the only part of the figure the
+ * person is able to change.
+ *
+ * The "not rated yet" state is rendered rather than hidden. An absent grade
+ * that looks like blank space reads as a passing one.
+ */
+function WasteTier({
+  rating, minimumDays, daysTracked,
+}: { rating: WasteRating | null; minimumDays: number; daysTracked: number }) {
+  if (rating === null) {
+    return (
+      <div className="tier tier-unrated">
+        <span className="tier-badge">Not rated yet</span>
+        <span className="tier-text">
+          Needs {minimumDays} days of idle tracking to judge — {daysTracked} so far.
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className={`tier tier-${rating.tier}`}>
+      <span className="tier-badge">{rating.label}</span>
+      <span className="tier-text">
+        {rating.detail}{' '}
+        {rating.next_tier_share === null
+          ? 'This is the best band.'
+          : `Getting below ${(rating.next_tier_share * 100).toFixed(0)}% would reach the next band.`}
+      </span>
     </div>
   )
 }

@@ -566,3 +566,37 @@ body {
 .rec-day:first-child .rec-day-label { margin-top: 0; }
 
 .rec-list { margin: 0; padding: 0; list-style: none; }
+
+/* --- waste tier --- */
+
+.tier {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 11px;
+  padding: 9px 12px;
+  border-left: 3px solid var(--border);
+  background: #1f222a;
+}
+
+.tier-badge {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+
+.tier-text { font-size: 12.5px; color: var(--muted); }
+
+/* Semantic, and deliberately not the chart palette: this is a verdict, not
+   another series. */
+.tier-excellent { border-left-color: #3ddc84; }
+.tier-excellent .tier-badge { color: #3ddc84; }
+.tier-good      { border-left-color: #7ec96b; }
+.tier-good .tier-badge { color: #7ec96b; }
+.tier-fair      { border-left-color: #e8973f; }
+.tier-fair .tier-badge { color: #e8973f; }
+.tier-poor      { border-left-color: #ff6b6b; }
+.tier-poor .tier-badge { color: #ff6b6b; }
+.tier-unrated   { border-left-color: #6b7383; }
+.tier-unrated .tier-badge { color: var(--muted); }

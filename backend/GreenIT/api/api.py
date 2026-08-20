@@ -13,6 +13,7 @@ from GreenIT.database import database
 from GreenIT.estimators.process_catalog import label_for
 from GreenIT.estimators import config_audit
 from GreenIT.estimators import equivalences
+from GreenIT.estimators import rating
 from GreenIT.collectors.windows import power_settings
 from GreenIT.collectors.windows import scheduled_tasks
 from GreenIT.database.hardware_repository import HardwareRepository
@@ -190,6 +191,13 @@ def summary(days: int = 7):
             result["current"]["watt_hours"], result["current"]["grams_co2eq"])
     ]
     result["offhours"] = database.get_offhours_summary(days)
+
+    # None when idle tracking has not run long enough to judge. The dashboard
+    # renders that as "not enough data to rate yet" rather than hiding the
+    # element, so an absent grade never reads as a good one.
+    verdict = rating.rate_waste(result["idle_awake_share"], result["days_tracked"])
+    result["rating"] = verdict.to_dict() if verdict else None
+    result["rating_minimum_days"] = rating.MINIMUM_DAYS_TRACKED
     return result
 
 
