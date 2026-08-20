@@ -12,6 +12,20 @@
   --muted: #8b93a7;
   --text: #e8eaf0;
 
+  /* Headings.
+   *
+   * index.css applies `h1, h2 { color: var(--text-h) }` globally, and it
+   * defines --text-h as #08060d under light OS theme and #f3f4f6 under dark.
+   * This dashboard is unconditionally dark — body is painted #14161b right
+   * here — so on a machine set to a LIGHT theme every panel title rendered
+   * near-black on a near-black panel and was effectively invisible.
+   *
+   * Redefining the token on .dashboard rather than overriding the colour on
+   * each heading keeps the palette self-contained: a UI that commits to one
+   * appearance must not inherit colours that swing with the OS, and any
+   * heading added later is correct without anyone remembering this. */
+  --text-h: #f4f6fa;
+
   /* Component colours, reused by the chart and the legend swatches. */
   --baseline: #556070;
   --cpu: #4a9eff;
