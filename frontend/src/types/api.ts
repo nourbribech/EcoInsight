@@ -110,7 +110,9 @@ export interface PeriodSummary {
   per_day: DayTotal[]
   top_applications: { name: string; label: string | null; watt_hours: number }[]
   idle_awake_watt_hours: number | null
+  /** Idle energy over energy on the TRACKED days, not over the whole period. */
   idle_awake_share: number | null
+  energy_on_tracked_days_wh: number | null
   days_tracked: number
   /** Human-scale restatements of the same figures. Empty when the period is
    *  too small for any comparison to be meaningful. */

@@ -42,9 +42,13 @@ export function SummaryPanel({ days }: { days: number }) {
         <Figure
           label="Spent with nobody there"
           value={formatWaste(data)}
+          // Says WHICH days the percentage is a share of. The figure is
+          // idle energy over energy on the tracked days only — a share
+          // against the full period would divide a 3-day numerator by a
+          // 7-day total and report 5.3% where the answer is 13.9%.
           detail={
             data.days_tracked > 0
-              ? `idle tracking on ${data.days_tracked} of ${data.days} days`
+              ? `share of the ${data.days_tracked} day${data.days_tracked === 1 ? '' : 's'} idle was tracked`
               : 'idle not tracked yet'
           }
           // The one figure on the dashboard that is entirely avoidable, so it

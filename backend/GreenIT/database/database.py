@@ -569,6 +569,25 @@ def get_observed_behaviour(days: int = 7) -> dict:
         "WHERE brightness_percent IS NOT NULL ORDER BY timestamp DESC LIMIT 1",
     ).fetchone()
 
+    # Energy drawn ONLY on the days idle was actually tracked.
+    #
+    # This is the denominator the idle share needs, and getting it wrong was a
+    # real bug: idle_seconds was added partway through this database's life,
+    # so the numerator covered 3 days while the total covered 7. The reported
+    # share came out 5.3% where matched coverage gives 13.8% — understating
+    # avoidable waste by a factor of 2.6 purely through arithmetic.
+    #
+    # Matching them means the ratio answers one question about one period,
+    # instead of dividing a measurement by a period it was never measured over.
+    energy_on_tracked_days = cursor.execute(
+        "SELECT SUM(interval_watt_hours) FROM measurements "
+        "WHERE substr(timestamp, 1, 10) IN ("
+        "  SELECT DISTINCT substr(timestamp, 1, 10) FROM telemetry_history "
+        "  WHERE timestamp >= ? AND idle_seconds IS NOT NULL"
+        ")",
+        (since,),
+    ).fetchone()[0]
+
     idle_minutes_total = (idle_rows or 0) * TELEMETRY_INTERVAL_SECONDS / 60
     connection.close()
 
@@ -582,6 +601,7 @@ def get_observed_behaviour(days: int = 7) -> dict:
         "brightness_percent": brightness[0] if brightness else None,
         "typical_watts": typical_watts,
         "days_tracked": tracked_days,
+        "energy_on_tracked_days_wh": energy_on_tracked_days,
     }
 
 
@@ -739,10 +759,14 @@ def get_period_summary(days: int = 7) -> dict:
             {**application, "label": None} for application in top_applications
         ],
         "idle_awake_watt_hours": wasted,
+        # Divided by energy on the tracked days, NOT by the period total —
+        # see get_observed_behaviour. Both halves of this ratio now describe
+        # the same days.
         "idle_awake_share": (
-            wasted / current["watt_hours"]
-            if wasted and current["watt_hours"] > 0 else None
+            wasted / behaviour["energy_on_tracked_days_wh"]
+            if wasted and behaviour["energy_on_tracked_days_wh"] else None
         ),
+        "energy_on_tracked_days_wh": behaviour["energy_on_tracked_days_wh"],
         "days_tracked": behaviour["days_tracked"],
     }
 
