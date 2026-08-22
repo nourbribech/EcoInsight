@@ -18,9 +18,11 @@ from GreenIT.estimators import config_audit
 from GreenIT.estimators import equivalences
 from GreenIT.estimators import rating
 from GreenIT.estimators import lifecycle
+from GreenIT.estimators import workloads
 from GreenIT.collectors.windows import power_settings
 from GreenIT.collectors.windows import scheduled_tasks
 from GreenIT.collectors.windows import battery_health
+from GreenIT.collectors.windows import wsl
 from GreenIT.database.hardware_repository import HardwareRepository
 from GreenIT.services.hardware_service import HardwareService
 from GreenIT.services.estimation_loop import HARDWARE_DB_PATH
@@ -41,6 +43,9 @@ app = FastAPI()
 # TTLs let each be as fresh as it needs to be and no fresher.
 POWER_SETTINGS_TTL_SECONDS = 60
 WAKE_TASKS_TTL_SECONDS = 1800
+# ~340 ms of wsl.exe subprocess. A minute is short enough that shutting a
+# distro down is reflected while the user still remembers doing it.
+WSL_TTL_SECONDS = 60
 
 _cache: dict[str, tuple[float, object]] = {}
 
@@ -184,6 +189,38 @@ def insights():
 
     findings = [f.to_dict() for f in config_audit.audit(settings, observed)]
     return {"settings": settings, "observed": observed, "findings": findings}
+
+
+@app.get("/api/workloads")
+def workload_findings(days: int = 7):
+    """
+    Developer workloads left running - today, WSL distributions.
+
+    The live reading is cached for a minute: it costs a `wsl.exe` subprocess
+    (~340 ms), and a dashboard left open in a background tab must not spawn
+    one of those per poll. That would be the same waste this project reports
+    on, committed by the reporting tool.
+
+    Note the CPU figure comes from whichever process object the cache is
+    holding, so it is an average over the gap since the last call rather than
+    an instantaneous sample - which is the more useful number anyway.
+    """
+    reading = _cached("wsl", WSL_TTL_SECONDS, wsl.collect)
+    history = database.get_workload_history("wsl", days)
+
+    profile = _cached("calibration", 86400, lambda: _with_com(_resolve_profile))
+    findings = workloads.assess(
+        reading, history, profile.cpu.watts_per_percent_usage)
+
+    return {
+        "wsl": reading,
+        "history": history,
+        "findings": [f.to_dict() for f in findings],
+        # Carried so the panel can mark figures derived from an estimated
+        # profile, exactly as the config audit does.
+        "calibration_source": profile.source,
+        "days": days,
+    }
 
 
 @app.get("/api/lifecycle")

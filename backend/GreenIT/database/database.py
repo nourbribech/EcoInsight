@@ -936,3 +936,121 @@ def get_waste_between(start: datetime, end: datetime) -> dict:
         ),
     }
 
+
+# --- workloads (WSL, and later containers) ---
+
+def _ensure_workload_table(cursor) -> None:
+    """
+    Created on demand rather than only in initialize_database().
+
+    The API process never calls initialize_database() - the agent does - so a
+    dashboard opened on a machine where the agent has not yet run would hit a
+    missing table on every read. Costs microseconds and removes the ordering
+    dependency entirely.
+    """
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS workload_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            -- "wsl" today. Containers and dev servers are the same shape of
+            -- fact, so they join this table rather than getting their own.
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            running INTEGER NOT NULL,
+            -- All nullable: a stopped workload has no CPU rather than 0% of
+            -- one, and the first sample after a restart has no baseline to
+            -- diff against. Storing 0.0 there would read as "measured, and it
+            -- was idle", which is the exact conclusion this table exists to
+            -- support or refuse.
+            cpu_percent REAL,
+            memory_bytes INTEGER,
+            uptime_seconds REAL,
+            attached_sessions INTEGER
+        )
+        """
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_workload_samples_timestamp "
+        "ON workload_samples (kind, timestamp)"
+    )
+
+
+def save_workload_samples(timestamp: datetime, rows: list[dict]) -> None:
+    """`rows` as produced by estimators/workloads.samples_from()."""
+    if not rows:
+        return
+
+    connection = get_connection()
+    cursor = connection.cursor()
+    _ensure_workload_table(cursor)
+    cursor.executemany(
+        "INSERT INTO workload_samples "
+        "(timestamp, kind, name, running, cpu_percent, memory_bytes, "
+        " uptime_seconds, attached_sessions) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (
+                timestamp.isoformat(),
+                row["kind"],
+                row["name"],
+                1 if row["running"] else 0,
+                row.get("cpu_percent"),
+                row.get("memory_bytes"),
+                row.get("uptime_seconds"),
+                row.get("attached_sessions"),
+            )
+            for row in rows
+        ],
+    )
+    connection.commit()
+    connection.close()
+
+
+def get_workload_history(kind: str, days: int = 7) -> dict:
+    """
+    What a workload has actually been doing, aggregated.
+
+    This is what separates a measurement from a guess. A single live sample
+    can say "idle right now", which is worthless advice - a developer between
+    two builds looks identical to a distribution nobody has touched since
+    Monday. Counting the samples over days is what lets the finding say
+    "running 31 of the last 48 hours and never once above 1.4% CPU".
+
+    peak CPU rather than mean is the honest summary for "was it ever busy":
+    a mean over days is dragged to nearly zero by one quiet night and would
+    call an actively used distribution idle.
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    _ensure_workload_table(cursor)
+    since = (datetime.now() - timedelta(days=days)).isoformat()
+
+    row = cursor.execute(
+        "SELECT COUNT(*), "
+        "       SUM(running), "
+        "       MAX(cpu_percent), "
+        "       AVG(cpu_percent), "
+        "       MAX(memory_bytes), "
+        "       SUM(CASE WHEN running = 1 AND attached_sessions = 0 THEN 1 ELSE 0 END) "
+        "FROM workload_samples WHERE kind = ? AND timestamp >= ?",
+        (kind, since),
+    ).fetchone()
+    connection.close()
+
+    samples = row[0] or 0
+    running_samples = row[1] or 0
+
+    return {
+        "samples": samples,
+        "running_samples": running_samples,
+        # Each sample stands for one telemetry interval, the cadence the loop
+        # writes these on.
+        "running_hours": running_samples * TELEMETRY_INTERVAL_SECONDS / 3600,
+        "observed_hours": samples * TELEMETRY_INTERVAL_SECONDS / 3600,
+        "peak_cpu_percent": row[2],
+        "mean_cpu_percent": row[3],
+        "peak_memory_bytes": row[4],
+        "unattended_samples": row[5] or 0,
+        "unattended_hours": (row[5] or 0) * TELEMETRY_INTERVAL_SECONDS / 3600,
+    }

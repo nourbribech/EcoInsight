@@ -230,3 +230,38 @@ export interface GoalVerdict {
   days_tracked: number
 }
 
+/** GET /api/workloads — developer workloads left running (today, WSL). */
+export interface Workloads {
+  wsl: {
+    /** False means the question could not be asked — no WSL, or the command
+     *  failed. NOT the same as "no distributions", and never rendered as such. */
+    available: boolean
+    installed: string[]
+    running: string[]
+    docker: boolean
+    vm: {
+      running: boolean
+      pid: number | null
+      /** Host CPU, normalised over cores. Null on the first sample after the
+       *  agent starts — there is no baseline to diff against yet. */
+      cpu_percent: number | null
+      memory_bytes: number | null
+      uptime_seconds: number | null
+      attached_sessions: number
+    }
+  }
+  history: {
+    samples: number
+    running_samples: number
+    running_hours: number
+    observed_hours: number
+    peak_cpu_percent: number | null
+    mean_cpu_percent: number | null
+    peak_memory_bytes: number | null
+    unattended_samples: number
+    unattended_hours: number
+  }
+  findings: Finding[]
+  calibration_source: string
+  days: number
+}

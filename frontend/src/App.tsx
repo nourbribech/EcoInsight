@@ -11,6 +11,7 @@ import { SummaryPanel } from './components/SummaryPanel'
 import { GoalPanel } from './components/GoalPanel'
 import { InsightsPanel } from './components/InsightsPanel'
 import { LifecyclePanel } from './components/LifecyclePanel'
+import { WorkloadsPanel } from './components/WorkloadsPanel'
 import type { Recommendation, Telemetry } from './types/api'
 import './dashboard.css'
 
@@ -160,6 +161,23 @@ function App() {
           </div>
         </div>
         <InsightsPanel />
+      </section>
+
+      {/*
+        Developer workloads sit next to the configuration findings because
+        they are the same kind of fact: something left running that nobody is
+        looking at. The difference is that a power setting is wrong until
+        someone changes it, while a distribution left up is wrong until
+        someone closes it — so this one belongs below "Fix once", not in it.
+      */}
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Left running</h2>
+          <div className="legend">
+            <span className="muted">WSL distributions · memory held · unattended CPU</span>
+          </div>
+        </div>
+        <WorkloadsPanel />
       </section>
 
       {/*

@@ -12,6 +12,8 @@ from GreenIT.estimators.energy import EnergyEstimator
 from GreenIT.estimators.carbon import CarbonEstimator
 from GreenIT.estimators.recommendations import RecommendationEngine
 from GreenIT.collectors.hardware import processes
+from GreenIT.collectors.windows import wsl
+from GreenIT.estimators import workloads
 from GreenIT.estimators.process_attribution import attribute_cpu_watts
 
 HARDWARE_DB_PATH = Path(__file__).resolve().parent.parent / "database" / "data" / "hardware.db"
@@ -81,6 +83,17 @@ class EstimationLoop:
         )
         database.save_process_samples(snapshot.timestamp, attributed)
 
+        # Developer workloads, on the same slow cadence. Two reasons it lives
+        # here rather than in the API: the history is what separates "idle
+        # right now" from "idle since Monday", and only a process that runs
+        # unattended can build one. Sampling on request would mean a machine
+        # whose owner never opens the dashboard has no record at all.
+        #
+        # Deliberately not gated on WSL being installed - the collector
+        # answers "not available" in ~15 ms on a machine without it, and
+        # writes nothing.
+        self._save_workloads(snapshot.timestamp)
+
         # The same sample feeds both the dashboard table and the messages, so
         # a recommendation can never name a process that the Top Consumers
         # panel is not also showing at that moment.
@@ -100,6 +113,24 @@ class EstimationLoop:
             database.save_recommendation(recommendation)
 
         return recommendations
+
+    def _save_workloads(self, timestamp) -> None:
+        """
+        Records what developer workloads are doing, and never takes the loop
+        down with it.
+
+        The broad catch is deliberate and narrow in effect: this is an
+        optional enrichment reading a subprocess and other users' processes,
+        both of which can fail for reasons that have nothing to do with power
+        estimation - a locked-down machine, a WSL upgrade mid-write, an
+        AccessDenied on a protected process. Losing a workload sample is
+        acceptable; losing the measurement it was collected alongside is not.
+        """
+        try:
+            database.save_workload_samples(
+                timestamp, workloads.samples_from(wsl.collect()))
+        except Exception as error:  # noqa: BLE001 - see docstring
+            print(f"workload sampling failed, continuing: {error!r}")
 
     def tick(self):
         """One iteration. Returns (power, energy, carbon) or None if this tick had nothing to report yet."""
