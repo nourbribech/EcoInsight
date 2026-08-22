@@ -689,3 +689,121 @@ body {
 .lifecycle-health-good { color: #3ddc84; }
 .lifecycle-health-fair { color: #e8973f; }
 .lifecycle-health-poor { color: #ff6b6b; }
+
+/* --- weekly goal --- */
+
+.goal {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 11px 12px 8px;
+  border-left: 3px solid var(--border);
+  background: #1f222a;
+}
+
+.goal-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.goal-headline { font-size: 14px; font-weight: 600; color: var(--text); }
+.goal-detail   { margin: 0; font-size: 12.5px; color: var(--muted); }
+
+/* Same semantic palette as the waste tier, so a colour means the same thing
+   in both places rather than each panel inventing its own. */
+.goal-on_track  { border-left-color: #3ddc84; }
+.goal-close     { border-left-color: #e8973f; }
+.goal-over      { border-left-color: #ff6b6b; }
+.goal-too_early,
+.goal-no_data   { border-left-color: #6b7383; }
+
+.goal-on_track .goal-headline { color: #3ddc84; }
+.goal-close .goal-headline    { color: #e8973f; }
+.goal-over .goal-headline     { color: #ff6b6b; }
+
+.goal-bar-row { display: flex; align-items: center; gap: 10px; }
+
+.goal-bar-track {
+  position: relative;
+  flex: 1;
+  height: 14px;
+  background: var(--grid);
+  overflow: hidden;
+}
+
+.goal-bar-fill { height: 100%; background: #6b7383; }
+.goal-on_track .goal-bar-fill { background: #3ddc84; }
+.goal-close .goal-bar-fill    { background: #e8973f; }
+.goal-over .goal-bar-fill     { background: #ff6b6b; }
+
+/* Where the week itself has got to. A 1px rule rather than a block, so it
+   reads as a reference line and never as another quantity. */
+.goal-bar-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--text);
+  opacity: 0.65;
+}
+
+.goal-bar-figure {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.goal-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.goal-options { display: flex; gap: 2px; }
+
+.goal-options button {
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.goal-options button.active {
+  color: var(--text);
+  background: var(--panel);
+  border-color: #3d4150;
+}
+
+.goal-options button:disabled { cursor: progress; opacity: 0.55; }
+
+.goal-error { font-size: 12px; color: #ff6b6b; }
+
+.goal-previous {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.goal-previous-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--muted);
+}
+
+.goal-verdict {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+
+.goal-verdict-met    { color: #3ddc84; }
+.goal-verdict-missed { color: #e8973f; }
+

@@ -859,3 +859,80 @@ def get_latest_process_samples(limit: int = 10) -> list[sqlite3.Row]:
     ).fetchall()
     connection.close()
     return rows
+
+
+def get_waste_between(start: datetime, end: datetime) -> dict:
+    """
+    Idle-but-awake energy and its share, for an explicit window.
+
+    get_observed_behaviour() answers the same question for a TRAILING window
+    ("the last 7 days"), which is right for the audit and wrong for a goal: a
+    trailing window never ends, so there is no moment at which a target is
+    met or missed. A goal needs a calendar week with a Monday and a deadline,
+    which means bounding both ends rather than only the start.
+
+    The share divides by energy on the days idle was actually tracked, for
+    the reason documented at length in get_observed_behaviour - a numerator
+    covering three days over a denominator covering seven understates waste
+    by the ratio of the two.
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    since, until = start.isoformat(), end.isoformat()
+
+    idle_rows = cursor.execute(
+        "SELECT COUNT(*) FROM telemetry_history "
+        "WHERE timestamp >= ? AND timestamp < ? AND idle_seconds > ?",
+        (since, until, IDLE_THRESHOLD_SECONDS),
+    ).fetchone()[0]
+
+    tracked_days = cursor.execute(
+        "SELECT COUNT(DISTINCT substr(timestamp, 1, 10)) FROM telemetry_history "
+        "WHERE timestamp >= ? AND timestamp < ? AND idle_seconds IS NOT NULL",
+        (since, until),
+    ).fetchone()[0]
+
+    typical_watts = cursor.execute(
+        "SELECT AVG(total_watts) FROM measurements "
+        "WHERE timestamp >= ? AND timestamp < ?",
+        (since, until),
+    ).fetchone()[0]
+
+    # Energy inside the window AND on a day idle was tracked. Both bounds
+    # matter: without the upper one a Monday-start window would pull in the
+    # whole of the preceding Sunday whenever Sunday shared a tracked day.
+    tracked_energy = cursor.execute(
+        "SELECT SUM(interval_watt_hours) FROM measurements "
+        "WHERE timestamp >= ? AND timestamp < ? "
+        "  AND substr(timestamp, 1, 10) IN ("
+        "    SELECT DISTINCT substr(timestamp, 1, 10) FROM telemetry_history "
+        "    WHERE timestamp >= ? AND timestamp < ? AND idle_seconds IS NOT NULL)",
+        (since, until, since, until),
+    ).fetchone()[0]
+
+    total_energy = cursor.execute(
+        "SELECT SUM(interval_watt_hours) FROM measurements "
+        "WHERE timestamp >= ? AND timestamp < ?",
+        (since, until),
+    ).fetchone()[0]
+    connection.close()
+
+    idle_minutes = (idle_rows or 0) * TELEMETRY_INTERVAL_SECONDS / 60
+    wasted_wh = idle_minutes / 60 * typical_watts if typical_watts else None
+
+    return {
+        "start": since,
+        "end": until,
+        "wasted_watt_hours": wasted_wh,
+        "tracked_energy_watt_hours": tracked_energy,
+        "total_watt_hours": total_energy or 0.0,
+        # Returned so callers can restate a watt-hour figure as time - "about
+        # 4 hours of leaving it awake" - without a second query.
+        "typical_watts": typical_watts,
+        "days_tracked": tracked_days,
+        "share": (
+            wasted_wh / tracked_energy
+            if wasted_wh is not None and tracked_energy else None
+        ),
+    }
+

@@ -188,3 +188,45 @@ export interface Lifecycle {
     health_percent: number | null
   }
 }
+
+/** GET/PUT /api/goal — the soft weekly target and progress against it. */
+export interface Goal {
+  target_share: number
+  default_target_share: number
+  minimum_target_share: number
+  maximum_target_share: number
+  /** Null while nobody has chosen one, so the panel can say "assumed"
+   *  rather than implying the user picked the default. */
+  chosen_at: string | null
+  week_start: string
+  week_end: string
+  status: GoalStatus
+  /** Null when the finished week carries too little tracking to judge —
+   *  rendered as an absence, never as a pass. */
+  previous_week: GoalVerdict | null
+}
+
+export interface GoalStatus {
+  target_share: number
+  share: number | null
+  state: 'no_data' | 'too_early' | 'on_track' | 'close' | 'over'
+  headline: string
+  detail: string
+  wasted_watt_hours: number | null
+  /** What the target allows over the whole week, projected from the pace so
+   *  far. Null before enough of the week has elapsed to project honestly. */
+  budget_watt_hours: number | null
+  /** What it allows for the energy used so far. */
+  pace_watt_hours: number | null
+  remaining_watt_hours: number | null
+  elapsed_fraction: number
+  days_tracked: number
+}
+
+export interface GoalVerdict {
+  share: number
+  met: boolean
+  wasted_watt_hours: number | null
+  days_tracked: number
+}
+

@@ -8,6 +8,7 @@ import { IoChart } from './components/IoChart'
 import { ProcessTable } from './components/ProcessTable'
 import { RecommendationsFeed } from './components/RecommendationsFeed'
 import { SummaryPanel } from './components/SummaryPanel'
+import { GoalPanel } from './components/GoalPanel'
 import { InsightsPanel } from './components/InsightsPanel'
 import { LifecyclePanel } from './components/LifecyclePanel'
 import type { Recommendation, Telemetry } from './types/api'
@@ -96,7 +97,26 @@ function App() {
       <StatsBar latest={latest} latestTelemetry={latestTelemetry} />
 
       {/*
-        The digest sits first because it answers the question the user
+        The goal outranks even the digest, because it is the only thing on the
+        page the user chose. The digest reports; this one is a commitment they
+        made, and a target you set yourself is read as feedback where the same
+        number handed to you reads as a verdict.
+
+        It is also the only panel with a deadline. Everything else here uses a
+        trailing window, which never ends and so can never be succeeded at.
+      */}
+      <section className="panel">
+        <div className="panel-head">
+          <h2>This week's goal</h2>
+          <div className="legend">
+            <span className="muted">avoidable waste · Monday to Sunday · yours to set</span>
+          </div>
+        </div>
+        <GoalPanel />
+      </section>
+
+      {/*
+        The digest sits next because it answers the question the user
         actually has — "am I doing better than last week?" — while everything
         below answers "what is happening right now". A tool for personal
         improvement should lead with the improvement.

@@ -8,8 +8,11 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from GreenIT.database import database
+from GreenIT.database import settings_store
+from GreenIT.estimators import goals
 from GreenIT.estimators.process_catalog import label_for
 from GreenIT.estimators import config_audit
 from GreenIT.estimators import equivalences
@@ -207,6 +210,74 @@ def machine_lifecycle(days: int = 7):
     result["battery"] = battery
     result["measured_days"] = days
     return result
+
+
+class GoalUpdate(BaseModel):
+    """`target_share` as a fraction (0.15) or a percentage (15) - see
+    goals.normalise_target, which accepts both."""
+    target_share: float
+
+
+def _goal_payload() -> dict:
+    """
+    The weekly goal, this calendar week's progress, and last week's verdict.
+
+    Both weeks are computed here rather than by the caller because the answer
+    is meaningless without the pair: progress alone is a gauge, and it is the
+    finished week that lets the user have actually met something.
+    """
+    target = goals.normalise_target(
+        settings_store.get(goals.SETTING_KEY, goals.DEFAULT_TARGET_SHARE))
+
+    now = datetime.now()
+    start, end = goals.week_bounds(now)
+    this_week = database.get_waste_between(start, now)
+    # The full preceding week, both bounds fixed - a finished period, so its
+    # verdict does not move once written.
+    last_week = database.get_waste_between(start - timedelta(days=goals.WEEK_DAYS),
+                                           start)
+
+    status = goals.evaluate(target, this_week, now, this_week.get("typical_watts"))
+
+    return {
+        "target_share": target,
+        "default_target_share": goals.DEFAULT_TARGET_SHARE,
+        "minimum_target_share": goals.MINIMUM_TARGET_SHARE,
+        "maximum_target_share": goals.MAXIMUM_TARGET_SHARE,
+        # None until the user has set one, which lets the panel distinguish
+        # "you chose 15%" from "nobody has chosen, so we assumed 15%".
+        "chosen_at": settings_store.updated_at(goals.SETTING_KEY),
+        "week_start": start.isoformat(),
+        "week_end": end.isoformat(),
+        "status": status.to_dict(),
+        # Judged against the target held NOW, not the one in force last week.
+        # That means changing the goal re-judges history, which is a real
+        # choice and the right one here: the target is not stored per week, so
+        # the alternative is a verdict against a number the user can no longer
+        # see. For a soft goal, "if I had been aiming at 10% I would have
+        # missed" is useful rather than dishonest.
+        "previous_week": goals.verdict(target, last_week),
+    }
+
+
+@app.get("/api/goal")
+def goal():
+    return _goal_payload()
+
+
+@app.put("/api/goal")
+def set_goal(update: GoalUpdate):
+    """
+    Stores the target and returns the recomputed status in one round trip, so
+    the panel re-renders against the new goal without a second fetch.
+
+    Normalised before storing rather than on read: the stored value is then
+    the one the user will be judged against, instead of a raw number that
+    every reader has to remember to clamp.
+    """
+    settings_store.set(goals.SETTING_KEY,
+                       goals.normalise_target(update.target_share))
+    return _goal_payload()
 
 
 @app.get("/api/summary")
