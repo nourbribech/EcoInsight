@@ -1,4 +1,5 @@
 import { usePolling } from '../hooks/usePolling'
+import { Disclosure } from './Disclosure'
 import type { Lifecycle } from '../types/api'
 
 /** Changes on the timescale of years. Polled only to survive a restart. */
@@ -75,10 +76,14 @@ export function LifecyclePanel({ days }: { days: number }) {
       <BatteryRow battery={data.battery} />
 
       {/*
-        Provenance, stated rather than buried. This is the softest number in
-        the project: a manufacturer's figure, not a measurement, and published
-        footprints carry wide uncertainty of their own.
+        Provenance, available rather than buried. This is the softest number
+        in the project — a manufacturer's figure, not a measurement, and
+        published footprints carry wide uncertainty of their own — but it is
+        provenance, not a caveat that changes how the figure reads. A reader
+        who skips it still reads the kilograms correctly, so it collapses.
+        See Disclosure for where that line is drawn.
       */}
+      <Disclosure label="where these numbers come from">
       <p className="lifecycle-source">
         {data.embodied_is_estimate
           ? `No published footprint on file for ${data.machine_model} — using a
@@ -91,6 +96,7 @@ export function LifecyclePanel({ days }: { days: number }) {
         scaled to a year, so they under-count any period the agent was not
         running — which makes the multiple above a floor.
       </p>
+      </Disclosure>
     </div>
   )
 }

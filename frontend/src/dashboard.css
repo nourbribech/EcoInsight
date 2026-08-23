@@ -947,3 +947,42 @@ body {
 /* --- seven-day patterns (Live view) --- */
 
 .patterns { display: flex; flex-direction: column; gap: 14px; }
+
+/* --- disclosure --- */
+
+.disclosure { margin-top: 2px; }
+
+.disclosure-summary {
+  display: inline-block;
+  font-size: 11.5px;
+  color: var(--muted);
+  cursor: pointer;
+  /* The default triangle sits oddly against an inline-block summary and
+     cannot be styled consistently across browsers, so it is replaced. */
+  list-style: none;
+  user-select: none;
+}
+
+.disclosure-summary::-webkit-details-marker { display: none; }
+
+.disclosure-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 5px;
+  font-size: 9px;
+  transition: transform 0.12s ease;
+}
+
+.disclosure[open] > .disclosure-summary::before { transform: rotate(90deg); }
+
+.disclosure-summary:hover { color: var(--text); }
+
+.disclosure-body { padding-top: 6px; }
+
+/* A caveat that changes how a figure reads never collapses — see
+   Disclosure.tsx. Marking it visually keeps that distinction legible. */
+.workload-note-warn {
+  padding-left: 9px;
+  border-left: 2px solid #e8973f;
+  color: var(--text);
+}

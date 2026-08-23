@@ -1,3 +1,4 @@
+import { Disclosure } from './Disclosure'
 import type { Recommendation } from '../types/api'
 
 interface Props {
@@ -40,12 +41,14 @@ export function RecommendationsFeed({ recommendations, error, windowHours }: Pro
     return (
       <div className="chart-empty">
         Nothing worth reporting in the last {formatWindow(windowHours)}.
-        <div className="empty-hint">
-          The engine looks for avoidable waste, not for busy moments. It
-          reports a machine left awake with nobody at it, a job still running
-          unattended, and sustained load it can trace to one application. If
-          it can't say what's responsible, it stays quiet.
-        </div>
+        <Disclosure label="what does it look for?">
+          <div className="empty-hint">
+            The engine looks for avoidable waste, not for busy moments. It
+            reports a machine left awake with nobody at it, a job still running
+            unattended, and sustained load it can trace to one application. If
+            it can't say what's responsible, it stays quiet.
+          </div>
+        </Disclosure>
       </div>
     )
   }

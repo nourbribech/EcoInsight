@@ -1,4 +1,5 @@
 import { usePolling } from '../hooks/usePolling'
+import { Disclosure } from './Disclosure'
 import type { Workloads } from '../types/api'
 
 /** The server caches the live reading for 60s; polling faster refetches it. */
@@ -83,16 +84,40 @@ export function WorkloadsPanel() {
       */}
 
       {/*
-        WSL2 runs every distribution in ONE utility VM, so the figures above
-        cover all of them together. Stating that beats letting a reader assume
-        a per-distribution breakdown that the host cannot produce.
+        THE SPLIT HERE IS THE WHOLE POINT OF Disclosure's rule.
+
+        The general explanation - WSL2 uses one utility VM - is background: a
+        reader who skips it still reads the figures correctly, so it
+        collapses. The two conditional sentences do NOT collapse, because
+        each changes what the numbers above actually contain. With two
+        distributions running, no figure belongs to either one; with Docker
+        installed, the memory total includes containers. Hiding either would
+        let a reader over-trust a number, which is the one thing this pattern
+        must never do.
       */}
-      <p className="workload-note">
-        WSL2 runs all running distributions inside a single utility VM, so CPU
-        and memory here describe that VM as a whole
-        {data.wsl.running.length > 1 && ' — with more than one running, no figure is attributable to a single distribution'}
-        .{data.wsl.docker && ' Docker Desktop containers run inside it too and are counted in these totals.'}
-      </p>
+      {data.wsl.running.length > 1 && (
+        <p className="workload-note workload-note-warn">
+          More than one distribution is running, and WSL2 puts them all in one
+          utility VM — so none of the figures above is attributable to a single
+          distribution.
+        </p>
+      )}
+      {data.wsl.docker && (
+        <p className="workload-note workload-note-warn">
+          Docker Desktop containers run inside this same VM, so they are
+          counted in the CPU and memory totals above.
+        </p>
+      )}
+      <Disclosure label="how WSL is measured">
+        <p className="workload-note">
+          WSL2 runs every running distribution inside a single utility VM, which
+          the host sees as one process called vmmemWSL. Per-distribution CPU and
+          memory cannot be recovered from the host at all, so the figures here
+          describe that VM as a whole — exact when one distribution is running,
+          shared when more are. CPU is averaged over the interval since the
+          last reading rather than sampled instantaneously.
+        </p>
+      </Disclosure>
     </div>
   )
 }
