@@ -1,5 +1,5 @@
 import { usePolling } from '../hooks/usePolling'
-import type { OffHours, PeriodSummary, WasteRating } from '../types/api'
+import type { PeriodSummary, WasteRating } from '../types/api'
 
 /** Nothing here changes faster than the telemetry cadence. */
 const POLL_MS = 60_000
@@ -96,19 +96,12 @@ export function SummaryPanel({ days }: { days: number }) {
         ))}
       </div>
 
-      <OffHoursProfile offhours={data.offhours} />
-
-      {data.top_applications.length > 0 && (
-        <div className="summary-apps">
-          <span className="summary-apps-label">Costliest applications</span>
-          {data.top_applications.map((application) => (
-            <span className="summary-app" key={application.name}>
-              {application.label ?? application.name}
-              <b>{application.watt_hours.toFixed(1)} Wh</b>
-            </span>
-          ))}
-        </div>
-      )}
+      {/*
+        The 24-hour draw profile and the costliest-application list moved to
+        PatternsPanel on the Live view. They are analysis - where did it go,
+        and when - where everything left here is a verdict. Six sub-blocks in
+        one panel made this a dashboard inside a dashboard.
+      */}
     </div>
   )
 }
@@ -140,58 +133,6 @@ function Figure({
       <span className="stat-label">{label}</span>
       <span className="summary-value">{value}</span>
       <span className="stat-detail">{detail}</span>
-    </div>
-  )
-}
-
-
-/**
- * When the machine actually drew power, by hour of day.
- *
- * The number on its own does not persuade anybody — "136 Wh outside working
- * hours" is a statistic. Twenty-four bars with the small hours clearly lit is
- * an argument, and it is the one office finding an employee can act on
- * without asking anyone's permission.
- */
-function OffHoursProfile({ offhours }: { offhours: OffHours }) {
-  const peak = Math.max(...offhours.by_hour, 1)
-  const share = offhours.offhours_share
-
-  return (
-    <div className="offhours">
-      <div className="offhours-head">
-        <span className="summary-apps-label">Draw by hour of day</span>
-        <span className="offhours-figure">
-          {offhours.offhours_watt_hours.toFixed(0)} Wh outside{' '}
-          {offhours.workday_start_hour}:00–{offhours.workday_end_hour}:00
-          {share !== null && ` · ${(share * 100).toFixed(0)}%`}
-          {offhours.weekend_watt_hours > 0 &&
-            `, of which ${offhours.weekend_watt_hours.toFixed(0)} Wh at weekends`}
-        </span>
-      </div>
-      <div className="offhours-bars">
-        {offhours.by_hour.map((wattHours, hour) => {
-          const isWorkHour =
-            hour >= offhours.workday_start_hour && hour < offhours.workday_end_hour
-          return (
-            <div
-              className="offhours-hour"
-              key={hour}
-              title={`${String(hour).padStart(2, '0')}:00 — ${wattHours.toFixed(1)} Wh`}
-            >
-              <div className="offhours-track">
-                <div
-                  /* Off-hours bars carry the alert colour: the same height
-                     means something different at 03:00 than at 15:00. */
-                  className={`offhours-bar${isWorkHour ? '' : ' offhours-bar-off'}`}
-                  style={{ height: `${(wattHours / peak) * 100}%` }}
-                />
-              </div>
-              {hour % 6 === 0 && <span className="offhours-tick">{hour}</span>}
-            </div>
-          )
-        })}
-      </div>
     </div>
   )
 }

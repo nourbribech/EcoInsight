@@ -48,6 +48,11 @@ WAKE_TASKS_TTL_SECONDS = 1800
 # ~340 ms of wsl.exe subprocess. A minute is short enough that shutting a
 # distro down is reflected while the user still remembers doing it.
 WSL_TTL_SECONDS = 60
+# The digest aggregates over 145k+ measurement rows and takes ~2.2s. Its
+# answer changes only as fast as measurements accumulate, and two views now
+# ask for it, so caching it for one poll interval removes the duplication
+# and most of the cost at once.
+SUMMARY_TTL_SECONDS = 60
 
 _cache: dict[str, tuple[float, object]] = {}
 
@@ -377,6 +382,11 @@ def set_goal(update: GoalUpdate):
 
 @app.get("/api/summary")
 def summary(days: int = 7):
+    """Cached wrapper; see _summary for what it computes."""
+    return _cached(f"summary:{days}", SUMMARY_TTL_SECONDS, lambda: _summary(days))
+
+
+def _summary(days: int) -> dict:
     """
     The period digest: what this machine used, how much of it was avoidable,
     and how that compares with the period before.

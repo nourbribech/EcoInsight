@@ -12,6 +12,7 @@ import { GoalPanel } from './components/GoalPanel'
 import { ActionsPanel } from './components/ActionsPanel'
 import { LifecyclePanel } from './components/LifecyclePanel'
 import { WorkloadsPanel } from './components/WorkloadsPanel'
+import { PatternsPanel } from './components/PatternsPanel'
 import type { Measurement, Recommendation, Telemetry } from './types/api'
 import './dashboard.css'
 
@@ -267,6 +268,23 @@ function LiveView({
           {rows.length} samples · applies to the charts below
         </span>
       </div>
+
+      {/*
+        Seven-day patterns, above the live charts and below the window
+        picker that does NOT apply to them - hence the explicit "last 7
+        days" in the heading. Sitting next to Top consumers is deliberate:
+        one is what is drawing power now, the other what cost the most all
+        week, and the pair is more informative than either alone.
+      */}
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Patterns</h2>
+          <div className="legend">
+            <span className="muted">last 7 days · fixed window</span>
+          </div>
+        </div>
+        <PatternsPanel days={7} />
+      </section>
 
       <section className="panel">
         <div className="panel-head">
