@@ -986,3 +986,42 @@ body {
   border-left: 2px solid #e8973f;
   color: var(--text);
 }
+
+/* --- collapsible day groups in the recommendations feed --- */
+
+/* .rec-day-label was an <h3> and is now a <summary>. Everything below is
+   what that change costs: the native marker has to go, and the row has to
+   become a real clickable target rather than a heading that happens to sit
+   above a list. */
+.rec-day-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.rec-day-label::-webkit-details-marker { display: none; }
+
+.rec-day-label::before {
+  content: '▸';
+  font-size: 9px;
+  transition: transform 0.12s ease;
+}
+
+.rec-day[open] > .rec-day-label::before { transform: rotate(90deg); }
+
+.rec-day-label:hover { color: var(--text); }
+
+/* The count stays on the closed row: a collapsed group must say how much it
+   is holding, or it hides history without admitting to it. */
+.rec-day-count {
+  padding: 0 5px;
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--grid);
+  border-radius: 8px;
+}
+
+.rec-day[open] > .rec-day-label { margin-bottom: 6px; }

@@ -1,4 +1,5 @@
 import { usePolling } from '../hooks/usePolling'
+import { Disclosure } from './Disclosure'
 import type { Action, Actions } from '../types/api'
 
 /** The server caches both halves; polling faster just refetches them. */
@@ -102,7 +103,16 @@ function ActionRow({ action }: { action: Action }) {
           {OWNER_LABELS[action.fixable] ?? action.fixable}
         </span>
       </div>
-      <p className="finding-detail">{action.detail}</p>
+      {/*
+        The REASONING collapses; the fix does not.
+        A row is read-complete without it: the title states what is wrong and
+        the action states what to do about it, so a reader who never opens
+        this still behaves correctly. What is inside is why it matters -
+        worth having, not worth re-reading on every visit.
+      */}
+      <Disclosure label="why this matters">
+        <p className="finding-detail">{action.detail}</p>
+      </Disclosure>
       {action.action && <p className="finding-action">{action.action}</p>}
       {/*
         Attribution, quiet but present. "power settings" and "developer

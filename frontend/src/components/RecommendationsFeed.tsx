@@ -55,8 +55,15 @@ export function RecommendationsFeed({ recommendations, error, windowHours }: Pro
 
   return (
     <div className="rec-feed">
-      {groupByDay(recommendations).map((group) => (
-        <section className="rec-day" key={group.key}>
+      {groupByDay(recommendations).map((group, index) => (
+        /*
+          Only the most recent day opens. Fifty rows of history was the
+          single longest thing on this view, and all but the newest are a
+          record rather than news - a reader who wants Tuesday can ask for
+          Tuesday. The count stays on the closed row so nothing is hidden
+          without being announced.
+        */
+        <details className="rec-day" key={group.key} open={index === 0}>
           {/*
             Every row used to show only a clock time. Inside a 1h window that
             reads fine; across 7 days it produced fifty rows of bare times
@@ -64,7 +71,10 @@ export function RecommendationsFeed({ recommendations, error, windowHours }: Pro
             Grouping puts the date in one place per day instead of repeating
             it on every row, which is also how any log or message feed does it.
           */}
-          <h3 className="rec-day-label">{group.label}</h3>
+          <summary className="rec-day-label">
+            {group.label}
+            <span className="rec-day-count">{group.items.length}</span>
+          </summary>
           <ul className="rec-list">
             {group.items.map((rec) => {
               const kind =
@@ -85,7 +95,7 @@ export function RecommendationsFeed({ recommendations, error, windowHours }: Pro
               )
             })}
           </ul>
-        </section>
+        </details>
       ))}
     </div>
   )
