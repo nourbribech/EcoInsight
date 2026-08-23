@@ -21,8 +21,15 @@ dist/
 # measurement history, not source.
 backend/GreenIT/data/*.db
 backend/GreenIT/data/*.db-journal
+# WAL mode (see get_connection) keeps a write-ahead log and a shared-memory
+# index alongside the database. Both are regenerated from the .db and are
+# meaningless in a checkout.
+backend/GreenIT/data/*.db-wal
+backend/GreenIT/data/*.db-shm
 backend/GreenIT/data/*.backup-*.db
-backend/GreenIT/data/agent.log
+# Rotated logs too: the bare *.log rule further down does not match
+# agent.log.20260822, so a rotation left an 2.7 MB file staged for commit.
+backend/GreenIT/data/agent.log*
 
 # hardware.db is deliberately NOT ignored: it holds the per-machine
 # calibration profile, it is 20 KB, and it changes only when somebody reruns a

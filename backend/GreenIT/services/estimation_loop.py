@@ -63,6 +63,11 @@ class EstimationLoop:
 
     PROCESS_SAMPLE_LIMIT = 10
 
+    # Roughly a minute of consecutive failures at the default interval.
+    # Long enough to ride out a lock storm or a laptop resuming from
+    # sleep, short enough that a genuinely broken agent is not silent.
+    MAX_CONSECUTIVE_FAILURES = 40
+
     def _maybe_save_telemetry(self, snapshot, power) -> list:
         """Writes a telemetry snapshot at most once per TELEMETRY_INTERVAL_SECONDS."""
         if (
@@ -156,10 +161,42 @@ class EstimationLoop:
         interval = interval_seconds or MetricsPollingService.DEFAULT_INTERVAL_SECONDS
         print(f"Starting estimation loop for: {self._calibration_profile.machine_model}")
 
+        # Consecutive failures, not total. A transient lock or a WMI hiccup
+        # should cost one sample, not the whole session - but a fault that
+        # never clears must still surface rather than looping silently
+        # forever.
+        consecutive_failures = 0
+
         while True:
             started_at = time.monotonic()
 
-            result = self.tick()
+            try:
+                result = self.tick()
+                consecutive_failures = 0
+            except Exception as error:  # noqa: BLE001
+                # WHY THIS CATCH EXISTS, from a real failure.
+                #
+                # On 2026-08-22 a single "database is locked" on commit
+                # propagated out of tick(), out of this loop, and killed the
+                # collection thread. The API kept answering, so the dashboard
+                # showed a healthy agent and fourteen-hour-old data. One
+                # transient contention ended the session.
+                #
+                # Collection is the thing that cannot be recovered after the
+                # fact: a sample not taken at 14:03 is gone. Skipping a tick
+                # is cheap; stopping is not. So the loop absorbs it, says so,
+                # and carries on.
+                consecutive_failures += 1
+                print(f"tick failed ({consecutive_failures} in a row), "
+                      f"continuing: {error!r}")
+                if consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+                    # Not transient. Let it out to the agent's crash handler,
+                    # which makes it loud, rather than hiding a broken agent
+                    # behind an infinite retry.
+                    raise
+                time.sleep(interval)
+                continue
+
             if result is not None:
                 power, energy, carbon, recommendations = result
                 print(

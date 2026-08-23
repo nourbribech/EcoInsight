@@ -26,17 +26,62 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATABASE_PATH = PROJECT_ROOT / "GreenIT" / "data" / "ecoinsight.db"
 # Connection
 
+# How long a connection waits for a lock before giving up. The default is
+# five seconds, which sounds generous and is not: /api/summary aggregates
+# over 130k+ rows, and the estimation loop wants to commit every 1.5s.
+BUSY_TIMEOUT_SECONDS = 30.0
+
+_journal_mode_set = False
+
+
 def get_connection() -> sqlite3.Connection:
     """
     Create a SQLite connection.
+
+    WHY WAL, AND WHAT IT FIXES
+    This database has two writers-and-readers on one file: the estimation
+    loop committing a measurement every 1.5 seconds, and the API answering
+    dashboard polls with aggregate scans over the whole measurements table.
+
+    In the default rollback-journal mode a reader blocks a writer, and on
+    2026-08-22 that killed the agent: save_measurement() raised
+    "database is locked" on commit, the exception propagated out of tick()
+    and out of run_forever(), and the collection thread died. The API kept
+    serving, so the dashboard looked healthy while nothing had been recorded
+    for fourteen hours - the precise failure the agent's crash handler was
+    written to make loud, arriving through a path nobody had considered.
+
+    WAL lets readers and the single writer proceed concurrently, which is
+    exactly this workload. The setting is a property of the DATABASE FILE,
+    not the connection, so it survives restarts and only needs setting once
+    per process - hence the flag rather than a PRAGMA on every connect.
+
+    busy_timeout is the belt to WAL's braces: two writers still serialise,
+    so a checkpoint or a concurrent write can still make one wait. Waiting
+    is correct; raising after five seconds is not.
 
     Returns
     -------
     sqlite3.Connection
     """
+    global _journal_mode_set
 
-    connection = sqlite3.connect(DATABASE_PATH)
+    connection = sqlite3.connect(DATABASE_PATH, timeout=BUSY_TIMEOUT_SECONDS)
     connection.row_factory = sqlite3.Row
+
+    if not _journal_mode_set:
+        # Best-effort: a database on a network share cannot use WAL, and
+        # failing to switch is not a reason to refuse to run.
+        try:
+            connection.execute("PRAGMA journal_mode=WAL")
+            # NORMAL rather than FULL: with WAL this only risks losing the
+            # last few commits on an OS crash, and losing a second of power
+            # samples matters far less than fsyncing 40 times a minute on a
+            # laptop this tool is meant to be frugal on.
+            connection.execute("PRAGMA synchronous=NORMAL")
+        except sqlite3.Error:
+            pass
+        _journal_mode_set = True
 
     return connection
 
