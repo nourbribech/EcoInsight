@@ -19,6 +19,8 @@ from GreenIT.estimators import equivalences
 from GreenIT.estimators import rating
 from GreenIT.estimators import lifecycle
 from GreenIT.estimators import workloads
+# Aliased because the endpoint function below is also called `actions`.
+from GreenIT.estimators import actions as actions_estimator
 from GreenIT.collectors.windows import power_settings
 from GreenIT.collectors.windows import scheduled_tasks
 from GreenIT.collectors.windows import battery_health
@@ -158,16 +160,13 @@ def _resolve_profile():
     return service.get_current_machine_profile()
 
 
-@app.get("/api/insights")
-def insights():
+def _configuration_state() -> tuple[dict, dict]:
     """
-    Standing findings about how this machine is configured.
+    The settings and observed behaviour the configuration audit runs against.
 
-    Recomputed at most once a minute: reading the power policy costs ~310 ms
-    of subprocess work, and the answer only changes when somebody opens
-    Windows settings. Without the cache, a dashboard left open in a
-    background tab would spawn powercfg processes forever — the exact kind of
-    waste this project exists to report on.
+    Factored out because /api/insights and /api/actions both need exactly
+    this, and every line of it is a cached subprocess or a WMI round trip.
+    Duplicating it would have been correct and slow.
     """
     settings = _cached("power_settings", POWER_SETTINGS_TTL_SECONDS,
                        power_settings.collect)
@@ -187,6 +186,68 @@ def insights():
     observed["calibration_notes"] = profile.notes
     observed["machine_model"] = profile.machine_model
 
+    return settings, observed
+
+
+def _workload_state(days: int) -> tuple[dict, dict, object]:
+    """The live WSL reading, its recorded history, and the profile to price it."""
+    reading = _cached("wsl", WSL_TTL_SECONDS, wsl.collect)
+    history = database.get_workload_history("wsl", days)
+    profile = _cached("calibration", 86400, lambda: _with_com(_resolve_profile))
+    return reading, history, profile
+
+
+@app.get("/api/actions")
+def actions(days: int = 7):
+    """
+    Every standing finding, from every rule, in one ranked list.
+
+    The dashboard had grown three separate places telling the user to act,
+    with no ranking between them — and once the page was split into views,
+    the workload findings ended up on a different tab from the configuration
+    ones. Ranking is domain logic, so it happens here rather than in the
+    browser: the rule is then testable, and the panel makes one request
+    instead of two.
+
+    Both halves are already memoised by _cached, so the cost after the first
+    call is a couple of SQLite aggregates.
+    """
+    settings, observed = _configuration_state()
+    reading, history, profile = _workload_state(days)
+
+    ranked = actions_estimator.rank([
+        ("power settings", config_audit.audit(settings, observed)),
+        ("developer workloads",
+         workloads.assess(reading, history, profile.cpu.watts_per_percent_usage)),
+    ])
+
+    return {
+        "actions": [a.to_dict() for a in ranked],
+        "summary": actions_estimator.summarise(ranked),
+        # Carried so the panel can mark anything derived from an estimated
+        # profile, exactly as the individual panels already do.
+        "calibration_source": profile.source,
+    }
+
+
+@app.get("/api/insights")
+def insights():
+    """
+    Standing findings about how this machine is configured.
+
+    Kept alongside /api/actions rather than replaced by it: this returns the
+    raw settings and observed behaviour as well as the findings, which is
+    what makes it useful for debugging a rule that fired when it should not
+    have. /api/actions answers "what should I do", this answers "why did it
+    say that".
+
+    Recomputed at most once a minute: reading the power policy costs ~310 ms
+    of subprocess work, and the answer only changes when somebody opens
+    Windows settings. Without the cache, a dashboard left open in a
+    background tab would spawn powercfg processes forever — the exact kind of
+    waste this project exists to report on.
+    """
+    settings, observed = _configuration_state()
     findings = [f.to_dict() for f in config_audit.audit(settings, observed)]
     return {"settings": settings, "observed": observed, "findings": findings}
 
@@ -205,10 +266,7 @@ def workload_findings(days: int = 7):
     holding, so it is an average over the gap since the last call rather than
     an instantaneous sample - which is the more useful number anyway.
     """
-    reading = _cached("wsl", WSL_TTL_SECONDS, wsl.collect)
-    history = database.get_workload_history("wsl", days)
-
-    profile = _cached("calibration", 86400, lambda: _with_com(_resolve_profile))
+    reading, history, profile = _workload_state(days)
     findings = workloads.assess(
         reading, history, profile.cpu.watts_per_percent_usage)
 

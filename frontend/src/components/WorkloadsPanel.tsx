@@ -75,20 +75,12 @@ export function WorkloadsPanel() {
         />
       </div>
 
-      <ul className="findings">
-        {data.findings.map((finding) => (
-          <li key={finding.key} className={`finding finding-${finding.severity}`}>
-            <div className="finding-head">
-              <span className="finding-title">{finding.title}</span>
-              <span className={`finding-owner finding-owner-${finding.fixable}`}>
-                {OWNER_LABELS[finding.fixable] ?? finding.fixable}
-              </span>
-            </div>
-            <p className="finding-detail">{finding.detail}</p>
-            {finding.action && <p className="finding-action">{finding.action}</p>}
-          </li>
-        ))}
-      </ul>
+      {/*
+        The findings this endpoint also returns are rendered by ActionsPanel,
+        ranked against the configuration ones. Repeating them here would put
+        the same advice in two places on two tabs, which is the fragmentation
+        the merge was meant to end. This panel keeps the measurements.
+      */}
 
       {/*
         WSL2 runs every distribution in ONE utility VM, so the figures above
@@ -103,12 +95,6 @@ export function WorkloadsPanel() {
       </p>
     </div>
   )
-}
-
-const OWNER_LABELS: Record<string, string> = {
-  you: 'you can fix this',
-  it: 'needs IT',
-  none: 'nothing to do',
 }
 
 function formatUptime(seconds: number): string {

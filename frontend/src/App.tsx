@@ -9,7 +9,7 @@ import { ProcessTable } from './components/ProcessTable'
 import { RecommendationsFeed } from './components/RecommendationsFeed'
 import { SummaryPanel } from './components/SummaryPanel'
 import { GoalPanel } from './components/GoalPanel'
-import { InsightsPanel } from './components/InsightsPanel'
+import { ActionsPanel } from './components/ActionsPanel'
 import { LifecyclePanel } from './components/LifecyclePanel'
 import { WorkloadsPanel } from './components/WorkloadsPanel'
 import type { Measurement, Recommendation, Telemetry } from './types/api'
@@ -197,17 +197,19 @@ function TodayView({
       </section>
 
       {/*
-        Standing findings above the event feed: fixing a setting once saves
-        power every day afterwards, which outranks any single alert.
+        One ranked list, above the event feed. Standing findings outrank any
+        single alert - fixing a setting once saves power every day
+        afterwards - and ranking them against each other is the whole point:
+        three unranked lists made the reader do the prioritising.
       */}
       <section className="panel">
         <div className="panel-head">
-          <h2>Fix once</h2>
+          <h2>What to do</h2>
           <div className="legend">
-            <span className="muted">power settings · always current</span>
+            <span className="muted">power settings · developer workloads · always current</span>
           </div>
         </div>
-        <InsightsPanel />
+        <ActionsPanel />
       </section>
 
       <section className="panel">

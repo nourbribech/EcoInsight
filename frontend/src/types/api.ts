@@ -265,3 +265,24 @@ export interface Workloads {
   calibration_source: string
   days: number
 }
+
+/** GET /api/actions — every standing finding, ranked, from all rules. */
+export interface Actions {
+  actions: Action[]
+  summary: ActionSummary
+  calibration_source: string
+}
+
+/** A Finding plus which rule produced it. */
+export interface Action extends Finding {
+  source: string
+}
+
+export interface ActionSummary {
+  total: number
+  /** Excludes `ok` rows — those are reassurance, not work. */
+  todo: number
+  yours: number
+  needs_it: number
+  high: number
+}
