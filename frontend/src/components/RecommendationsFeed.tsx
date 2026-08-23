@@ -39,7 +39,7 @@ export function RecommendationsFeed({ recommendations, error, windowHours }: Pro
   if (recommendations.length === 0) {
     return (
       <div className="chart-empty">
-        Nothing worth reporting in the last {windowHours}h.
+        Nothing worth reporting in the last {formatWindow(windowHours)}.
         <div className="empty-hint">
           The engine looks for avoidable waste, not for busy moments. It
           reports a machine left awake with nobody at it, a job still running
@@ -138,4 +138,14 @@ function dayLabel(date: Date): string {
     return date.toLocaleDateString([], { weekday: 'long' })
   }
   return date.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+/**
+ * Windows are passed in hours because that is what the API takes, but "the
+ * last 168h" is not a phrase anybody uses. Days above two, hours below.
+ */
+function formatWindow(hours: number): string {
+  if (hours < 48) return `${hours}h`
+  const days = Math.round(hours / 24)
+  return `${days} day${days === 1 ? '' : 's'}`
 }

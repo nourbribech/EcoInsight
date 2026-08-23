@@ -839,3 +839,55 @@ body {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* --- view navigation --- */
+
+/* Tabs rather than a twelve-section scroll. The visual job here is to make
+   "which question am I asking" the most prominent control on the page, so
+   the active tab carries a solid underline rather than the faint border the
+   window picker uses — they are not peers. */
+.view-nav {
+  display: flex;
+  gap: 2px;
+}
+
+.view-nav button {
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.view-nav button:hover {
+  color: var(--text);
+}
+
+.view-nav button.active {
+  color: var(--text-h);
+  border-bottom-color: var(--cpu);
+}
+
+/* --- live view controls --- */
+
+/* The window picker lives inside the view it governs, not in the topbar.
+   Sitting directly above the charts it scopes is what makes that scope
+   legible without a caption doing the work. */
+.live-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.live-controls-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--muted);
+}

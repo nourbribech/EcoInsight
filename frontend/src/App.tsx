@@ -12,7 +12,7 @@ import { GoalPanel } from './components/GoalPanel'
 import { InsightsPanel } from './components/InsightsPanel'
 import { LifecyclePanel } from './components/LifecyclePanel'
 import { WorkloadsPanel } from './components/WorkloadsPanel'
-import type { Recommendation, Telemetry } from './types/api'
+import type { Measurement, Recommendation, Telemetry } from './types/api'
 import './dashboard.css'
 
 const WINDOWS = [
@@ -24,7 +24,28 @@ const WINDOWS = [
   { label: '7d', hours: 168 },
 ]
 
-/** The estimation loop writes a measurement roughly every 2.6s. */
+/**
+ * The page is split by QUESTION, not by data source.
+ *
+ * Before this it was twelve sections in one column, every one wrapped in an
+ * identical panel, so nothing signalled where to look and the eye had to read
+ * all of it. That flatness — not the amount of data — is what made it
+ * overwhelming.
+ *
+ * The three views also separate two timescales that were interleaved. "How am
+ * I doing this week" changes weekly; "what is happening right now" changes
+ * every 1.5 seconds. Mixing them meant scrolling past a 7-day digest to reach
+ * a live chart, which is a different question asked in a different mood.
+ */
+type View = 'today' | 'live' | 'machine'
+
+const VIEWS: { id: View; label: string }[] = [
+  { id: 'today', label: 'Today' },
+  { id: 'live', label: 'Live' },
+  { id: 'machine', label: 'This machine' },
+]
+
+/** The estimation loop writes a measurement roughly every 1.5s. */
 const MEASUREMENT_POLL_MS = 3000
 
 /**
@@ -34,16 +55,28 @@ const MEASUREMENT_POLL_MS = 3000
  */
 const TELEMETRY_POLL_MS = 30_000
 
+/**
+ * The feed lives on Today, where the window picker does not, so it needs a
+ * window of its own. Seven days matches the digest directly above it, and the
+ * feed already groups its rows by day.
+ */
+const RECOMMENDATIONS_WINDOW_HOURS = 168
+
 function App() {
+  const [view, setView] = useState<View>('today')
+
   // 6h rather than 1h: the agent isn't always running during development, so
   // a 1h default frequently shows an empty dashboard even though there's
-  // plenty of recent data. Worth revisiting once the loop runs unattended —
-  // Netdata can default to a short window precisely because its agent never
-  // stops.
+  // plenty of recent data.
   const [windowHours, setWindowHours] = useState(6)
 
-  // Measurements: seed-once-then-append, because the payload is large
-  // (1.12 MB/24h) and updates every ~2.6s.
+  // Kept mounted for every view, not just Live.
+  //
+  // Two reasons. The tail effect appends rows from /api/current, so `latest`
+  // is a genuine most-recent measurement within one poll of mount — which is
+  // what the Today tiles need, and it does not depend on the window at all.
+  // And the topbar's connection status has to mean something on every tab,
+  // not only the one with charts on it.
   const { rows, status, error } = useLiveSeries(windowHours, MEASUREMENT_POLL_MS)
 
   // Telemetry: a plain refetch on an interval — and that's the RIGHT call
@@ -52,8 +85,6 @@ function App() {
   // case: ~69 rows per day (about 12 KB) that change only every 120s, and
   // there's no single-row /api/telemetry/current endpoint to append from
   // anyway. Applying the complex pattern here would be cargo-culting it.
-  //
-  // This is what usePolling was built for, so we use it.
   const telemetry = usePolling<Telemetry[]>(
     `/api/telemetry?hours=${windowHours}`,
     TELEMETRY_POLL_MS,
@@ -62,7 +93,7 @@ function App() {
   // Recommendations are written only when telemetry is (every 120s), so
   // there's nothing to gain from polling them faster than telemetry itself.
   const recommendations = usePolling<Recommendation[]>(
-    `/api/recommendations?hours=${windowHours}&limit=50`,
+    `/api/recommendations?hours=${RECOMMENDATIONS_WINDOW_HOURS}&limit=50`,
     TELEMETRY_POLL_MS,
   )
 
@@ -74,37 +105,76 @@ function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-name">EcoInsight</span>
+          {/*
+            Connection state only. The sample count moved to the Live view,
+            next to the picker that determines it — quoting "240 samples" on
+            a tab with no window control describes something the reader
+            cannot see.
+          */}
           <span className={`status status-${status}`}>
-            {status === 'live' && `live · ${rows.length} samples`}
+            {status === 'live' && 'live'}
             {status === 'loading' && 'loading…'}
             {status === 'error' && `agent unreachable: ${error}`}
           </span>
         </div>
 
-        <div className="window-picker">
-          {WINDOWS.map((w) => (
+        <nav className="view-nav">
+          {VIEWS.map((v) => (
             <button
-              key={w.hours}
+              key={v.id}
               type="button"
-              className={w.hours === windowHours ? 'active' : ''}
-              onClick={() => setWindowHours(w.hours)}
+              className={v.id === view ? 'active' : ''}
+              aria-current={v.id === view ? 'page' : undefined}
+              onClick={() => setView(v.id)}
             >
-              {w.label}
+              {v.label}
             </button>
           ))}
-        </div>
+        </nav>
       </header>
 
+      {view === 'today' && (
+        <TodayView
+          latest={latest}
+          latestTelemetry={latestTelemetry}
+          recommendations={recommendations}
+        />
+      )}
+
+      {view === 'live' && (
+        <LiveView
+          rows={rows}
+          telemetry={telemetry}
+          windowHours={windowHours}
+          onWindowChange={setWindowHours}
+        />
+      )}
+
+      {view === 'machine' && <MachineView />}
+    </div>
+  )
+}
+
+/**
+ * The verdict and what to do about it. Nothing here changes faster than
+ * every couple of minutes, which is why none of it needs the window picker.
+ */
+function TodayView({
+  latest, latestTelemetry, recommendations,
+}: {
+  latest: Measurement | undefined
+  latestTelemetry: Telemetry | undefined
+  recommendations: { data: Recommendation[] | null; error: string | null }
+}) {
+  return (
+    <>
       <StatsBar latest={latest} latestTelemetry={latestTelemetry} />
 
       {/*
-        The goal outranks even the digest, because it is the only thing on the
-        page the user chose. The digest reports; this one is a commitment they
-        made, and a target you set yourself is read as feedback where the same
-        number handed to you reads as a verdict.
-
-        It is also the only panel with a deadline. Everything else here uses a
-        trailing window, which never ends and so can never be succeeded at.
+        The goal leads, because it is the only thing on the page the user
+        chose. The digest reports; this is a commitment they made, and a
+        target you set yourself reads as feedback where the same number
+        handed to you reads as a verdict.
       */}
       <section className="panel">
         <div className="panel-head">
@@ -116,12 +186,6 @@ function App() {
         <GoalPanel />
       </section>
 
-      {/*
-        The digest sits next because it answers the question the user
-        actually has — "am I doing better than last week?" — while everything
-        below answers "what is happening right now". A tool for personal
-        improvement should lead with the improvement.
-      */}
       <section className="panel">
         <div className="panel-head">
           <h2>Your last 7 days</h2>
@@ -133,24 +197,7 @@ function App() {
       </section>
 
       {/*
-        Lifecycle sits directly under the weekly digest, and that placement is
-        the argument: the digest reports grams, this reports the hundreds of
-        kilograms the machine cost before it was plugged in. Putting it lower
-        would let the reader finish the page believing weekly grams are the
-        whole story.
-      */}
-      <section className="panel">
-        <div className="panel-head">
-          <h2>Before it was switched on</h2>
-          <div className="legend">
-            <span className="muted">manufacturing carbon · battery health</span>
-          </div>
-        </div>
-        <LifecyclePanel days={7} />
-      </section>
-
-      {/*
-        Standing findings, above the event feed: fixing a setting once saves
+        Standing findings above the event feed: fixing a setting once saves
         power every day afterwards, which outranks any single alert.
       */}
       <section className="panel">
@@ -163,44 +210,61 @@ function App() {
         <InsightsPanel />
       </section>
 
-      {/*
-        Developer workloads sit next to the configuration findings because
-        they are the same kind of fact: something left running that nobody is
-        looking at. The difference is that a power setting is wrong until
-        someone changes it, while a distribution left up is wrong until
-        someone closes it — so this one belongs below "Fix once", not in it.
-      */}
-      <section className="panel">
-        <div className="panel-head">
-          <h2>Left running</h2>
-          <div className="legend">
-            <span className="muted">WSL distributions · memory held · unattended CPU</span>
-          </div>
-        </div>
-        <WorkloadsPanel />
-      </section>
-
-      {/*
-        Recommendations sit above the charts deliberately. They're the
-        actionable output of the whole pipeline — "here's what to do about it"
-        belongs before "here's the raw telemetry", which is also where every
-        monitoring tool puts its alarms.
-      */}
       <section className="panel">
         <div className="panel-head">
           <h2>Recommendations</h2>
           <div className="legend">
-            <span className="muted">
-              avoidable waste · unattended jobs · load traced to one app
-            </span>
+            <span className="muted">last 7 days · grouped by day</span>
           </div>
         </div>
         <RecommendationsFeed
           recommendations={recommendations.data}
           error={recommendations.error}
-          windowHours={windowHours}
+          windowHours={RECOMMENDATIONS_WINDOW_HOURS}
         />
       </section>
+    </>
+  )
+}
+
+/**
+ * Live telemetry, and the only view the window picker applies to.
+ *
+ * The picker used to sit in the topbar, where it looked global and was not:
+ * it scoped five of eleven panels, and SummaryPanel and LifecyclePanel were
+ * hardcoded to seven days regardless. Selecting "1h" left the digest
+ * unchanged, so a reader either concluded the app was broken or that the
+ * digest was showing one hour. Putting the control inside the view it
+ * governs makes its scope self-evident.
+ */
+function LiveView({
+  rows, telemetry, windowHours, onWindowChange,
+}: {
+  rows: Measurement[]
+  telemetry: { data: Telemetry[] | null; error: string | null }
+  windowHours: number
+  onWindowChange: (hours: number) => void
+}) {
+  return (
+    <>
+      <div className="live-controls">
+        <span className="live-controls-label">Window</span>
+        <div className="window-picker">
+          {WINDOWS.map((w) => (
+            <button
+              key={w.hours}
+              type="button"
+              className={w.hours === windowHours ? 'active' : ''}
+              onClick={() => onWindowChange(w.hours)}
+            >
+              {w.label}
+            </button>
+          ))}
+        </div>
+        <span className="muted">
+          {rows.length} samples · applies to the charts below
+        </span>
+      </div>
 
       <section className="panel">
         <div className="panel-head">
@@ -283,7 +347,40 @@ function App() {
           />
         )}
       </section>
-    </div>
+    </>
+  )
+}
+
+/**
+ * The machine itself, on a timescale of months and years.
+ *
+ * Manufacturing carbon and battery wear had no business sitting next to a
+ * chart that redraws every 1.5 seconds — the placement implied they were the
+ * same kind of fact. Here they are the only kind of fact.
+ */
+function MachineView() {
+  return (
+    <>
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Before it was switched on</h2>
+          <div className="legend">
+            <span className="muted">manufacturing carbon · battery health</span>
+          </div>
+        </div>
+        <LifecyclePanel days={7} />
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Left running</h2>
+          <div className="legend">
+            <span className="muted">WSL distributions · memory held · unattended CPU</span>
+          </div>
+        </div>
+        <WorkloadsPanel />
+      </section>
+    </>
   )
 }
 
