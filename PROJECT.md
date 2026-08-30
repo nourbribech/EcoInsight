@@ -2,6 +2,12 @@
 
 > Software-based power, energy and carbon estimation for Windows workstations,
 > with a live dashboard and a personalised recommendation engine.
+>
+> **This is the maintainer's document** — architecture, methodology, decisions
+> and open work. See [README.md](README.md) to install and run it,
+> [DEMO-setup.md](DEMO-setup.md) for the IT demo, and
+> [RAPPORT-source.md](RAPPORT-source.md) for the measured figures gathered for
+> the internship report.
 
 ---
 
