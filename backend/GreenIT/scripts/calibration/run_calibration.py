@@ -1,4 +1,14 @@
 """
+SUPERSEDED by auto_calibration.py — kept as the record of the original
+supervised procedure, not as a working entry point.
+
+Two things stop it running as written. Its imports are unqualified
+(`collectors.windows` rather than `GreenIT.collectors.windows`), so importing
+it raises; and run_cpu_sweep() calls input() at every load level, waiting for
+an operator to drive the CPU by hand, which no button or scheduled task can
+answer. auto_calibration.py generates the load itself and is what the IT
+screen runs.
+
 Full calibration run: CPU sweep (manual) + RAM sweep (automated) + disk
 sweep (automated), then saves the result to hardware.db.
 
