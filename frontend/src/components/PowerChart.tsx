@@ -34,7 +34,7 @@ export function PowerChart({ rows, windowHours }: Props) {
   const gaps = useMemo(() => findGaps(points, 'cpu_watts'), [points])
 
   if (points.length === 0) {
-    return <div className="chart-empty">No measurements in this window.</div>
+    return <div className="chart-empty">No power readings for this time range.</div>
   }
 
   return (

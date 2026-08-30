@@ -107,6 +107,11 @@ export interface PeriodSummary {
    * reporting a spectacular number derived from ten minutes of history.
    */
   change_percent: number | null
+  /** Why the comparison was withheld: 'calibration_changed' when the
+   *  coefficients moved inside the window, 'insufficient_history' when the
+   *  earlier period lacks comparable sample coverage. */
+  change_blocked_reason: 'calibration_changed' | 'insufficient_history' | null
+  profile_changes: { timestamp: string; machine_model: string; source: string; baseline_watts: number }[]
   per_day: DayTotal[]
   top_applications: { name: string; label: string | null; watt_hours: number }[]
   idle_awake_watt_hours: number | null

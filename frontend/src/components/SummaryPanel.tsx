@@ -12,16 +12,16 @@ const POLL_MS = 60_000
  * its own can't do that: 476 Wh is meaningless without either a comparison
  * or a share, so every figure here carries one.
  */
-export function SummaryPanel({ days }: { days: number }) {
+export function SummaryPanel({ days, end }: { days: number; end?: string }) {
   const { data, error, loading } = usePolling<PeriodSummary>(
-    `/api/summary?days=${days}`,
+    `/api/summary?days=${days}${end ? `&end=${encodeURIComponent(end)}` : ''}`,
     POLL_MS,
   )
 
-  if (loading) return <div className="chart-empty">Loading…</div>
-  if (error) return <div className="chart-empty">Summary unavailable: {error}</div>
+  if (loading) return <div className="chart-empty">Loading your weekly summary…</div>
+  if (error) return <div className="chart-empty">Your weekly summary is unavailable right now.</div>
   if (!data || data.current.samples === 0) {
-    return <div className="chart-empty">No measurements in this period yet.</div>
+    return <div className="chart-empty">No readings for this week yet.</div>
   }
 
   const peak = Math.max(...data.per_day.map((d) => d.watt_hours), 1)
@@ -32,7 +32,7 @@ export function SummaryPanel({ days }: { days: number }) {
         <Figure
           label={`Energy · last ${data.days} days`}
           value={`${data.current.watt_hours.toFixed(0)} Wh`}
-          detail={formatChange(data.change_percent)}
+          detail={formatChange(data.change_percent, data.change_blocked_reason)}
         />
         <Figure
           label="Carbon"
@@ -112,7 +112,21 @@ export function SummaryPanel({ days }: { days: number }) {
  * coverage — saying so is more useful than an empty space the reader has to
  * interpret.
  */
-function formatChange(changePercent: number | null): string {
+/**
+ * A withheld comparison names its own reason.
+ *
+ * Both reasons produce a null change_percent, and saying "not enough history"
+ * when the truth is "your machine was recalibrated" would blame the user's
+ * data for the tool's own change - and hide the one fact that explains why
+ * this week's watts are not comparable to last week's.
+ */
+function formatChange(
+  changePercent: number | null,
+  blockedReason: string | null = null,
+): string {
+  if (blockedReason === 'calibration_changed') {
+    return 'not compared — this machine was recalibrated in this period'
+  }
   if (changePercent === null) return 'not enough history to compare'
   const direction = changePercent < 0 ? 'less' : 'more'
   return `${Math.abs(changePercent).toFixed(0)}% ${direction} than the period before`

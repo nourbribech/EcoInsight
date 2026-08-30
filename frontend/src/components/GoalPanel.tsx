@@ -55,8 +55,8 @@ export function GoalPanel() {
     }
   }
 
-  if (loading) return <div className="chart-empty">Loading…</div>
-  if (error) return <div className="chart-empty">Goal unavailable: {error}</div>
+  if (loading) return <div className="chart-empty">Loading your goal…</div>
+  if (error) return <div className="chart-empty">Your goal is unavailable right now.</div>
   if (!data) return null
 
   const { status } = data
@@ -75,7 +75,7 @@ export function GoalPanel() {
 
       <div className="goal-picker">
         <span className="summary-apps-label">
-          Weekly goal
+          Energy-saving goal
           {/*
             "Assumed" vs "yours" matters more than it looks. A default
             presented as a choice the user made is a small lie, and it is the
@@ -98,7 +98,7 @@ export function GoalPanel() {
             </button>
           ))}
         </div>
-        {saveError && <span className="goal-error">Could not save: {saveError}</span>}
+        {saveError && <span className="goal-error">Could not save your goal.</span>}
       </div>
 
       <PreviousWeek goal={data} />

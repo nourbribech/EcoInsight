@@ -23,8 +23,8 @@ export function LifecyclePanel({ days }: { days: number }) {
     POLL_MS,
   )
 
-  if (loading) return <div className="chart-empty">Loading…</div>
-  if (error) return <div className="chart-empty">Lifecycle unavailable: {error}</div>
+  if (loading) return <div className="chart-empty">Loading machine history…</div>
+  if (error) return <div className="chart-empty">Machine history is unavailable right now.</div>
   if (!data) return null
 
   const share = data.manufacturing_share

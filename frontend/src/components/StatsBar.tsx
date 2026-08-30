@@ -33,12 +33,12 @@ export function StatsBar({ latest, latestTelemetry }: Props) {
   return (
     <div className="stats-bar">
       <Stat
-        label="Power draw"
+        label="Power right now"
         value={`${latest.total_watts.toFixed(2)} W`}
         detail={
-          `cpu ${latest.cpu_watts.toFixed(1)} · ` +
-          `ram ${latest.ram_watts.toFixed(1)} · ` +
-          `base ${latest.baseline_watts.toFixed(1)}`
+          `apps ${latest.cpu_watts.toFixed(1)} · ` +
+          `memory ${latest.ram_watts.toFixed(1)} · ` +
+          `machine ${latest.baseline_watts.toFixed(1)}`
         }
       />
       <Stat
@@ -53,17 +53,17 @@ export function StatsBar({ latest, latestTelemetry }: Props) {
         // this same x1000 conversion.
         label="Carbon this session"
         value={`${(latest.cumulative_kg_co2eq * 1000).toFixed(1)} g`}
-        detail="CO₂eq · Tunisia grid @ 483 g/kWh"
+        detail="estimated from the local grid"
       />
       <Stat
-        label="Display"
+        label="Screen"
         value={formatBrightness(latestTelemetry)}
         detail={formatMonitors(latestTelemetry)}
       />
       <Stat
-        label="Last reading"
+        label="Updated"
         value={new Date(latest.timestamp).toLocaleTimeString()}
-        detail={`row #${latest.id}`}
+        detail="latest reading"
       />
     </div>
   )
@@ -91,7 +91,7 @@ function formatBrightness(telemetry: Telemetry | undefined): string {
 }
 
 function formatMonitors(telemetry: Telemetry | undefined): string {
-  if (!telemetry || telemetry.monitor_count === null) return 'brightness unavailable'
+  if (!telemetry || telemetry.monitor_count === null) return 'screen details unavailable'
   const count = telemetry.monitor_count
   return `${count} ${count === 1 ? 'monitor' : 'monitors'}`
 }

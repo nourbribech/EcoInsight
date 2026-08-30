@@ -85,7 +85,7 @@ export function IoChart({ rows, windowHours, up, down }: Props) {
   const gaps = useMemo(() => findGaps(points, up.field), [points, up.field])
 
   if (points.length === 0) {
-    return <div className="chart-empty">No telemetry in this window.</div>
+    return <div className="chart-empty">No data-transfer readings for this time range.</div>
   }
 
   return (

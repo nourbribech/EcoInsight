@@ -24,8 +24,8 @@ const POLL_MS = 120_000
 export function ActionsPanel() {
   const { data, error, loading } = usePolling<Actions>('/api/actions', POLL_MS)
 
-  if (loading) return <div className="chart-empty">Checking…</div>
-  if (error) return <div className="chart-empty">Findings unavailable: {error}</div>
+  if (loading) return <div className="chart-empty">Checking your settings…</div>
+  if (error) return <div className="chart-empty">Suggestions are unavailable right now.</div>
   if (!data) return null
 
   // Split rather than filtered. An `ok` row is a reassurance, not a task, and
@@ -68,7 +68,7 @@ function Headline({ summary }: { summary: Actions['summary'] }) {
   if (summary.todo === 0) {
     return (
       <p className="actions-headline actions-headline-clear">
-        Nothing to fix right now — all {summary.total} checks are clear.
+        Nothing to change right now — all {summary.total} checks look good.
       </p>
     )
   }
@@ -81,7 +81,7 @@ function Headline({ summary }: { summary: Actions['summary'] }) {
 
   return (
     <p className="actions-headline">
-      <b>{summary.todo}</b> thing{summary.todo === 1 ? '' : 's'} worth doing
+      <b>{summary.todo}</b> thing{summary.todo === 1 ? '' : 's'} you could improve
       {parts.length > 0 && <span className="muted"> — {parts.join(', ')}</span>}
     </p>
   )
@@ -91,6 +91,9 @@ function ActionRow({ action }: { action: Action }) {
   return (
     <li className={`finding finding-${action.severity}`}>
       <div className="finding-head">
+        <span className={`finding-priority finding-priority-${action.severity}`}>
+          {action.severity === 'high' ? 'Important' : 'Worth checking'}
+        </span>
         <span className="finding-title">{action.title}</span>
         {/*
           WHO can fix it, on every row.
@@ -110,10 +113,12 @@ function ActionRow({ action }: { action: Action }) {
         this still behaves correctly. What is inside is why it matters -
         worth having, not worth re-reading on every visit.
       */}
-      <Disclosure label="why this matters">
+      <Disclosure label="why?">
         <p className="finding-detail">{action.detail}</p>
       </Disclosure>
-      {action.action && <p className="finding-action">{action.action}</p>}
+      {action.action && (
+        <p className="finding-action"><span className="finding-action-label">Try this</span>{action.action}</p>
+      )}
       {/*
         Attribution, quiet but present. "power settings" and "developer
         workloads" want different mental models even when the advice looks

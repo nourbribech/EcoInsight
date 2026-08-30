@@ -24,8 +24,8 @@ const GB = 1024 ** 3
 export function WorkloadsPanel() {
   const { data, error, loading } = usePolling<Workloads>('/api/workloads', POLL_MS)
 
-  if (loading) return <div className="chart-empty">Checking developer workloads…</div>
-  if (error) return <div className="chart-empty">Workloads unavailable: {error}</div>
+  if (loading) return <div className="chart-empty">Checking apps running in the background…</div>
+  if (error) return <div className="chart-empty">Background app data is unavailable right now.</div>
   if (!data) return null
 
   if (!data.wsl.available) {
@@ -33,7 +33,7 @@ export function WorkloadsPanel() {
     // be a claim about a machine we learned nothing about.
     return (
       <div className="chart-empty">
-        No WSL on this machine — nothing to report. Containers and virtual
+        No developer tools were found running — nothing to report. Containers and virtual
         machines are not tracked yet.
       </div>
     )

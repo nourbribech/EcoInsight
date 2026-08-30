@@ -30,23 +30,22 @@ const KINDS: Record<string, { label: string; severity: 'high' | 'medium' | 'low'
 
 export function RecommendationsFeed({ recommendations, error, windowHours }: Props) {
   if (error) {
-    return <div className="chart-empty">Recommendations unavailable: {error}</div>
+    return <div className="chart-empty">Suggestions are unavailable right now.</div>
   }
 
   if (recommendations === null) {
-    return <div className="chart-empty">Loading…</div>
+    return <div className="chart-empty">Looking for useful suggestions…</div>
   }
 
   if (recommendations.length === 0) {
     return (
       <div className="chart-empty">
-        Nothing worth reporting in the last {formatWindow(windowHours)}.
-        <Disclosure label="what does it look for?">
+        No avoidable energy use found in the last {formatWindow(windowHours)}.
+        <Disclosure label="what does it check?">
           <div className="empty-hint">
-            The engine looks for avoidable waste, not for busy moments. It
-            reports a machine left awake with nobody at it, a job still running
-            unattended, and sustained load it can trace to one application. If
-            it can't say what's responsible, it stays quiet.
+            It checks for a machine left on while nobody is using it, apps still
+            running while you are away, and unusually high activity that lasts.
+            It stays quiet when a busy moment looks like normal work.
           </div>
         </Disclosure>
       </div>

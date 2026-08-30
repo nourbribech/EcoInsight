@@ -30,10 +30,10 @@ export function PatternsPanel({ days }: { days: number }) {
     POLL_MS,
   )
 
-  if (loading) return <div className="chart-empty">Loading…</div>
-  if (error) return <div className="chart-empty">Patterns unavailable: {error}</div>
+  if (loading) return <div className="chart-empty">Loading daily patterns…</div>
+  if (error) return <div className="chart-empty">Daily patterns are unavailable right now.</div>
   if (!data || data.current.samples === 0) {
-    return <div className="chart-empty">No measurements in this period yet.</div>
+    return <div className="chart-empty">No readings for this period yet.</div>
   }
 
   return (

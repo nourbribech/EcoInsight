@@ -28,7 +28,7 @@ export function UtilizationChart({ rows, windowHours }: Props) {
   const gaps = useMemo(() => findGaps(points, 'cpu_usage_percent'), [points])
 
   if (points.length === 0) {
-    return <div className="chart-empty">No telemetry in this window.</div>
+    return <div className="chart-empty">No activity readings for this time range.</div>
   }
 
   return (
