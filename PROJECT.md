@@ -38,41 +38,61 @@ projets/
 │   ├── main.py                    # leftover FastAPI hello-world (NOT the real API)
 │   ├── config.py                  # legacy global constants (mostly superseded)
 │   ├── requirements.txt
-│   └── GreenIT/                   # the actual application package
+│   └── GreenIT/
+│       ├── agent.py               # THE entry point: loop on a thread + API on one port
 │       ├── collectors/            # layer 1 — raw OS readings
-│       │   ├── collector.py           # aggregates everything
-│       │   ├── hardware/              # psutil: cpu, memory, disk, network
-│       │   └── windows/               # WMI/ctypes: display, power, session, identity
-│       ├── models/                # layer 2 — typed data contracts (frozen dataclasses)
+│       │   ├── hardware/              # psutil: cpu, cpu_info, memory, disk,
+│       │   │                          #   network, processes
+│       │   └── windows/               # WMI/ctypes: display, power, power_settings,
+│       │                              #   session, system_identity, battery_health,
+│       │                              #   scheduled_tasks, wsl
+│       ├── models/                # layer 2 — typed contracts (frozen dataclasses)
 │       │   ├── runtime/               # cpu/memory/disk/network runtime metrics
-│       │   ├── snapshot.py            # SystemMetricsSnapshot
-│       │   ├── calibration.py         # CalibrationProfile
-│       │   ├── power_estimate.py / energy_estimate.py / carbon_estimate.py
-│       │   └── recommendation.py
+│       │   ├── snapshot.py, calibration.py, recommendation.py
+│       │   └── power_estimate.py / energy_estimate.py / carbon_estimate.py
 │       ├── services/              # layer 3 — orchestration + stateful sampling
-│       │   ├── metrics_polling_service.py
-│       │   ├── hardware_service.py
+│       │   ├── metrics_polling_service.py, hardware_service.py
 │       │   └── estimation_loop.py     # the main runtime loop
 │       ├── estimators/            # layer 4 — pure calculation
 │       │   ├── power.py / energy.py / carbon.py
-│       │   └── recommendations.py
+│       │   ├── recommendations.py, recommendation_messages.py, process_catalog.py
+│       │   ├── process_attribution.py, generic_calibration.py
+│       │   ├── goals.py, rating.py, equivalences.py
+│       │   ├── lifecycle.py           # embodied vs operating carbon
+│       │   ├── config_audit.py        # sleep settings, wake timers
+│       │   ├── workloads.py           # WSL / Docker left running
+│       │   └── actions.py             # every standing finding, ranked
 │       ├── database/              # layer 5 — SQLite persistence
 │       │   ├── database.py            # ecoinsight.db (history)
-│       │   ├── hardware_repository.py # hardware.db (calibration, read-only)
+│       │   ├── settings_store.py      # user preferences, JSON key/value
+│       │   ├── hardware_repository.py # hardware.db — READ ONLY, by design
+│       │   ├── calibration_writer.py  # hardware.db — the only writer
 │       │   └── data/hardware.db
 │       ├── data/ecoinsight.db     # measurement + telemetry + recommendation history
-│       ├── api/api.py             # FastAPI REST layer consumed by the frontend
-│       └── scripts/               # developer tools, not runtime
-│           ├── setup_hardware_db.py, migrate_drop_disk_column.py
-│           ├── smoke_test_power_estimator.py, check telemetry.py
-│           ├── recommendations_test.py
+│       ├── api/api.py             # FastAPI: REST layer + serves the built dashboard
+│       └── scripts/
+│           ├── install_autostart.py   # per-user log-on task
+│           ├── setup_hardware_db.py, migrate_*.py
 │           └── calibration/           # the measurement campaign toolkit
+│               ├── auto_calibration.py    # THE runnable sweep — generates its own load
+│               ├── _load.py               # CPU load worker (spawn-safe, no heavy imports)
+│               ├── battery_power.py       # discharge-rate ground truth + fit_line
+│               ├── validate_model.py      # cross-validated R² against a null model
+│               ├── ram_sweep.py, recalibrate_cpu.py, set_baseline.py
+│               └── run_calibration.py     # SUPERSEDED — supervised, unqualified imports
 └── frontend/                      # React 19 + TypeScript + Vite dashboard
     └── src/
-        ├── App.tsx                # still the Vite starter template
-        ├── components/StatsBar.tsx
-        ├── hooks/usePolling.tsx
-        └── types/api.tsx
+        ├── App.tsx                # views, topbar, session mode, IT setup routing
+        ├── components/
+        │   ├── StatsBar, PowerChart, UtilizationChart, IoChart      # live
+        │   ├── SummaryPanel, GoalPanel, ActionsPanel, PatternsPanel # digest
+        │   ├── RecommendationsFeed, ProcessTable, WorkloadsPanel
+        │   ├── LifecyclePanel                                        # years
+        │   ├── CalibrationPanel, ITSetupWizard                       # IT setup
+        │   └── Disclosure.tsx                                        # shared
+        ├── hooks/usePolling.tsx, hooks/useLiveSeries.ts
+        ├── lib/series.ts          # bucketing — what the CHARTS need
+        └── types/api.ts           # faithful mirror of the API contract
 ```
 
 ---
@@ -197,57 +217,134 @@ detection against the user's *own* history, not fixed thresholds:
 
 Two separate SQLite files with different lifecycles:
 
-**`GreenIT/database/data/hardware.db`** — read-only at runtime, shipped
-pre-populated, written only by calibration scripts.
+**`GreenIT/database/data/hardware.db`** — the fleet's calibration, shipped
+pre-populated and **tracked in git**: it is 20 KB, it changes only when somebody
+runs a sweep, and losing it means recalibrating from scratch.
 
 ```sql
 calibration_profiles(
   machine_model TEXT PRIMARY KEY,
   cpu_watts_per_percent_usage REAL, ram_watts_per_gb_used REAL,
-  baseline_watts REAL, calibrated_at TEXT, notes TEXT)
+  baseline_watts REAL, calibrated_at TEXT, notes TEXT,
+  source TEXT)                          -- 'measured' | 'entered'
 ```
 
-A missing machine model raises `UnknownMachineModelError` — a **deliberate hard
-failure**, not a fallback to generic coefficients, since a wrong guess would
-silently corrupt every downstream number.
+Read through `HardwareRepository`, which stays read-only by design, and written
+**only** through `CalibrationWriter` (§4.2). The `source` column was added
+alongside the screen that can write anything else; existing rows backfill to
+`measured`, because every row predating it came from a sweep.
 
-**`GreenIT/data/ecoinsight.db`** — the local history, created/migrated on startup
-by `initialize_database()`.
+A missing machine model still raises `UnknownMachineModelError` at the
+repository, which is the right answer to "is there a measured profile for this
+key". What to DO about the absence is policy, and policy lives in
+`HardwareService`: it falls back to a profile scaled from the CPU class, marked
+`source="estimated"`, and raises a dashboard finding. Since the fleet is
+calibrated model by model, every machine is uncalibrated for a while — a newly
+issued laptop has to produce labelled estimates in the meantime, not silence.
 
-| Table | Written by | Cadence | Current rows |
+**`GreenIT/data/ecoinsight.db`** — the local history, created and migrated on
+startup by `initialize_database()`. Gitignored: it is rewritten every 1.5 s and
+reached 33 MB in twenty days. A snapshot taken with `VACUUM INTO` is committed
+once, deliberately, when a machine is retired.
+
+| Table | Written by | Cadence | Rows (30 Aug) |
 |---|---|---|---|
-| `measurements` | estimation loop | every tick (~1.5 s) | 53 805 |
-| `telemetry_history` | estimation loop | every 120 s | 1 174 |
-| `recommendations` | (see §7) | on trigger | table not yet created in the live file |
+| `measurements` | estimation loop | every tick (~1.5 s) | 279 389 |
+| `telemetry_history` | estimation loop | every 120 s | 4 139 |
+| `process_samples` | estimation loop | every 120 s | 28 810 |
+| `workload_samples` | estimation loop | every 120 s | 1 770 |
+| `recommendations` | recommendation engine | on trigger | 99 |
+| `profile_changes` | on calibration write | on change | 1 |
+| `settings` | API, on user action | on change | 4 |
 | `cpu_specs` | online-lookup cache | on demand | 0 (unused so far) |
+
+`profile_changes` exists so the digest can **withhold** a period-over-period
+comparison when the coefficients moved inside the window. Comparing energy
+across a calibration change would report a change in the model as a change in
+behaviour.
 
 ### 3.5 API (`GreenIT/api/api.py`)
 
-FastAPI, CORS-allowed for the Vite dev server at `http://localhost:5173`.
+FastAPI, CORS-allowed for the Vite dev server at `http://localhost:5173`. In
+production it also **serves the built dashboard** from `frontend/dist`, so the
+agent is one process on one port.
+
+**Reading measurements**
 
 | Endpoint | Params | Returns |
 |---|---|---|
 | `GET /api/current` | – | latest `measurements` row, or `{}` |
-| `GET /api/history` | `hours=24` | measurements since cutoff, ascending |
-| `GET /api/telemetry` | `hours=24` | telemetry rows since cutoff |
-| `GET /api/recommendations` | `hours=24`, `limit=20` | recommendations, newest first |
+| `GET /api/history` | `hours`, `buckets` | measurements, downsampled in SQL |
+| `GET /api/telemetry` | `hours` | telemetry rows since cutoff |
+| `GET /api/processes` | – | per-application CPU/watts, newest sample |
+| `GET /api/recommendations` | `hours`, `limit` | recommendations, newest first |
 
-The API is **read-only**; it never runs the estimation loop. The loop is a
-separate process writing to the same SQLite file.
+**Analysis**
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/summary` | the digest: energy, carbon, per-day, idle share, off-hours, waste rating, equivalences |
+| `GET /api/insights` | standing configuration findings (sleep, wake timers) |
+| `GET /api/workloads` | WSL/Docker left running, with observed hours |
+| `GET /api/actions` | every standing finding from all rules, ranked |
+| `GET /api/lifecycle` | manufacturing carbon against operating carbon, battery health |
+| `GET`/`PUT /api/goal` | the weekly waste target and progress against it |
+
+**Session and IT setup**
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/session` | mode, `it_mode_source`, profile provenance, writability |
+| `POST /api/session/acknowledge` | records that the user saw how figures are derived |
+| `POST /api/session/unlock-it` | enter IT mode — refuses without write permission |
+| `POST /api/session/lock-it` | leave IT mode — 409 if the mode came from `--mode it` |
+| `POST /api/it/wizard-complete` | the walkthrough is shown once per database |
+| `GET`/`POST /api/calibration` | list / write a profile |
+| `DELETE /api/calibration/{model}` | remove a profile, after backing the file up |
+| `GET /api/calibration/export`, `POST .../import` | move profiles between machines |
+| `POST /api/calibration/run` | run the sweep in a child process (`quick=true`) |
+
+The measurement endpoints are read-only; the calibration ones are the single
+mutating surface, and every one of them is gated on the operating system
+allowing the write.
+
+**Caching.** Expensive collectors are memoised with separate TTLs, because they
+go stale at very different rates — power policy changes the moment somebody
+edits a setting (60 s), wake timers only when software is installed (30 min).
+Static assets carry an explicit policy: `no-cache` on `index.html`, which names
+which bundle to load, and `immutable` on the content-hashed assets, whose bytes
+can never change.
 
 ### 3.6 Frontend
 
 React 19 + TypeScript ~6 + Vite 8, with the React Compiler babel preset enabled.
 
-* **`hooks/usePolling.tsx`** — generic hook: fetch a URL on an interval, expose
-  `{data, error, loading}`, fire immediately rather than waiting for the first
-  tick, and cancel cleanly on unmount so a late response can't set state on an
-  unmounted component.
-* **`components/StatsBar.tsx`** — polls `/api/current` every 5 s and renders
-  three tiles: instantaneous power (with cpu/ram/baseline breakdown), cumulative
-  energy, cumulative carbon. Uses a type-guard to distinguish a real reading from
-  the empty `{}` the API returns when there is no data yet.
-* **`types/api.tsx`** — `CurrentReading` mirroring the `measurements` schema.
+**The page is split by QUESTION, not by data source.** Before that it was twelve
+sections in one column, every one wrapped in an identical panel, so nothing
+signalled where to look. That flatness — not the amount of data — is what made
+it overwhelming. The split also separates two timescales that were interleaved:
+"how am I doing this week" changes weekly, "what is happening now" changes every
+1.5 seconds.
+
+| View | Question | Timescale |
+|---|---|---|
+| **Today** | How do I compare this week? | week |
+| **Live** | What is happening right now? | seconds |
+| **Machine** | Should this machine be replaced? | years |
+| **IT setup** | Is this model calibrated? | fleet |
+| **Guide** | What do these numbers mean? | — |
+
+* **`hooks/usePolling.tsx`** — fetch a URL on an interval, expose
+  `{data, error, loading}`, fire immediately, cancel cleanly on unmount.
+* **`hooks/useLiveSeries.ts`** — seed from `/api/history` once, then append from
+  `/api/current`, so a live chart costs one row per poll instead of the whole
+  window. Used only where that pattern earns its complexity.
+* **`lib/series.ts`** — bucketing for the charts. Deliberately separate from
+  `types/api.ts`, which stays a faithful description of the server contract and
+  nothing else.
+* **Gaps are never filled.** A break in a chart means no measurement was
+  recorded. It is shaded rather than interpolated, and never drawn as a drop to
+  zero — that would claim the machine consumed nothing.
 
 ---
 
@@ -272,18 +369,72 @@ unplugged** and raises otherwise.
 
 | Script | What it does |
 |---|---|
-| `cpu_sweep.py` | Prompts you to drive the CPU to 0/25/50/75/100 % load, samples 25 s per level, returns raw measurements + prints the per-run regression |
-| `ram_sweep.py` | Automated: allocates 0/1/2/4 GB itself, samples power, fits, writes `ram_watts_per_gb_used` |
-| `recalibrate_cpu.py` | The mature path: loads all past runs from `data/cpu_calibration_runs.csv`, runs 3 more sweeps, appends them, refits over **all** historical + new points, and updates **only** the CPU coefficient |
-| `set_baseline.py` | Measures `baseline_watts` directly: sample CPU/power/RAM together, subtract the known CPU and RAM contributions, average over N runs. Doesn't require literal 0 % CPU — it corrects for whatever idle floor the machine really has. Refuses to write a non-positive result and warns if runs disagree |
-| `set_coefficient.py` | Manually set one coefficient from literature (with a citation in `notes`) — used for RAM |
-| `calibration_db.py` | Shared partial-update helper: writes only the given columns, always stamps `calibrated_at`, so one component can be recalibrated without redoing the others |
-| `run_calibration.py` | Full CPU + RAM sweep in one go, averaging the two intercepts into a single `baseline_watts` |
-| `test_lhm.py` | Spike: reading LibreHardwareMonitor sensors via pythonnet, an alternative ground-truth source |
+| **`auto_calibration.py`** | **The runnable path.** Generates the CPU load itself, samples usage and discharge together, fits, scores the fit by cross-validation, and writes through `CalibrationWriter`. `--quick` (~75 s) or full (3 randomised rounds). This is what the IT screen's button runs |
+| `_load.py` | The load worker. Its own module importing nothing but `time`: multiprocessing `spawn` re-imports the target's module in every child, and pointing that at the calibration module would import psutil and the COM stack *while CPU is being measured* |
+| `validate_model.py` | Scores the shipped coefficients against held-out data and against a null model |
+| `cpu_sweep.py` | Prompts you to drive the CPU by hand to 0/25/50/75/100 %, 25 s per level |
+| `ram_sweep.py` | Automated: allocates in half-GB blocks, randomised order across rounds, regresses CPU out. Writes nothing — prints a number and a confidence interval |
+| `recalibrate_cpu.py` | Loads all past runs from `data/cpu_calibration_runs.csv`, runs 3 more sweeps, refits over **all** points, updates **only** the CPU coefficient |
+| `set_baseline.py` | Measures `baseline_watts` at rest, subtracting the known CPU and RAM contributions. Doesn't require literal 0 % CPU — it corrects for whatever idle floor the machine really has |
+| `set_coefficient.py` | Manually set one coefficient from literature, with a citation in `notes` |
+| `calibration_db.py` | Partial-update helper: writes only the given columns, always stamps `calibrated_at` |
+| `run_calibration.py` | **Superseded.** Its imports are unqualified so it raises on import, and `cpu_sweep` calls `input()` at every level — a supervised procedure no button can start |
+| `test_lhm.py` | Spike: LibreHardwareMonitor via pythonnet. Dead end — the exposed sensors do not give total system draw on this model |
 
-`data/cpu_calibration_runs.csv` currently holds **45 raw measurements** across
-several runs for the Dell Latitude 7480 — the accumulating dataset behind the
+`data/cpu_calibration_runs.csv` holds **45 raw measurements** across nine sweeps
+and three sessions for the Dell Latitude 7480 — the dataset behind the
 0.10532 W/% coefficient.
+
+### 4.1 What the automated sweep guarantees
+
+Four things that are refusals rather than features, and matter more than the
+measurement itself:
+
+* **It only adds load, so it checks it has room to work.** On a machine already
+  at 85 % with a browser and an IDE open, every level measures near the top and
+  a line fitted through a 15-point spread is arithmetic, not calibration. Idle
+  CPU is checked before starting (3 s, fails fast) and the measured spread again
+  afterwards, because a machine that started quiet can get busy mid-run.
+* **Levels are visited in randomised order.** Battery voltage sags, a scan
+  finishes, the machine warms up. Anything changing monotonically with time
+  would otherwise land on whichever level is sampled late and masquerade as a
+  CPU effect.
+* **The fit is scored against a null model, not against itself.** Below the
+  threshold the profile is not written and the estimated one is kept — a weak
+  "measured" profile inherits the authority of a sweep without having earned it.
+* **The RAM coefficient is carried through as a reference value and labelled
+  one.** This machine's RAM sweep could not separate a memory effect from sensor
+  noise, and writing a measured-looking number nobody measured is the single
+  thing the design exists to prevent.
+
+### 4.2 Writing a profile (`database/calibration_writer.py`)
+
+Writing is a **different capability with a different caller**, so it is not a
+method on `HardwareRepository`. That class documents itself as read-only access
+and the guarantee is worth keeping: every estimator, the API and the estimation
+loop hold a repository, and none of them should be one typo away from rewriting
+the coefficients the whole fleet's numbers depend on.
+
+**Permission is the real gate, and `--mode it` is not.** Gating on the flag
+would be security theatre — any employee can pass it. If a flag were enough,
+anybody could drop their baseline from 5 W to 1 W and watch a third of their
+reported waste disappear, in a tool whose entire output is a waste figure. So
+the write is attempted and the operating system decides. On a managed fleet
+`hardware.db` is admin-writable only, which makes the boundary enforced by
+Windows rather than decorated by a UI.
+
+**Validation is physics, not taste.** A fat-fingered `0.105 → 1.05` produces
+numbers that look plausible and are wrong forever, with nothing downstream able
+to notice. The bounds come from what a laptop can actually do:
+CPU 0.02–0.60 W/%, RAM 0–1 W/GB, baseline 0.5–20 W.
+
+**Provenance is recorded and never upgraded.** `measured` means a sweep ran;
+`entered` means somebody typed it; `estimated` describes a runtime fallback and
+the writer refuses to store it at all. The typed-entry form always saves as
+`entered` — only the sweep itself, and importing a file already classified
+elsewhere, produce `measured`. Import preserves it because calibration belongs
+to a *model*: a sweep run on one laptop is genuinely measured for every
+identical unit, and downgrading it in transit would destroy true information.
 
 ---
 
@@ -314,28 +465,63 @@ ecoinsight.db  ──►  FastAPI  ──►  usePolling (5 s)  ──►  Stats
 
 ## 6. Running the project
 
-**Backend dependencies** (`requirements.txt` is UTF-16-encoded and incomplete —
-see §7): `fastapi`, `uvicorn`, `pydantic`, `psutil`, `wmi`,
-`screen-brightness-control`, and `pythonnet` only for `test_lhm.py`.
+**Backend dependencies** (`requirements.txt`, UTF-8, six direct entries):
+`fastapi`, `uvicorn`, `pydantic`, `psutil`, `wmi`,
+`screen-brightness-control`; `pythonnet` is calibration-only.
 
-```bash
+**One command runs the product.** The agent starts collection on a background
+thread and serves the API plus the built dashboard from the same process — the
+Netdata model.
+
+```powershell
 # from backend/
-python -m GreenIT.services.estimation_loop      # the collection + estimation loop
-uvicorn GreenIT.api.api:app --port 8000         # the read API
+.\.venv\Scripts\python.exe -m GreenIT.agent
+# → http://127.0.0.1:8000
 ```
 
-```bash
-# from frontend/
-npm install
-npm run dev        # http://localhost:5173
+Useful flags: `--port`, `--database ./demo.db` (isolated history),
+`--machine-key "..."` (look the machine up under another name),
+`--mode it` (start in the IT view).
+
+**At log-on**, via a per-user task registered by
+`python -m GreenIT.scripts.install_autostart install|status|uninstall`. It runs
+`pythonw.exe`, so there is no console and the agent logs to
+`GreenIT/data/agent.log`. Control it with
+`Start-ScheduledTask -TaskName "EcoInsight Agent"`.
+
+### 6.1 The two-step rebuild
+
+The agent serves `frontend/dist`, **not** the sources. A change is invisible in
+the browser until both halves are done, and doing one but not the other produces
+a symptom that looks exactly like a bug in the feature itself.
+
+| Changed | Required |
+|---|---|
+| Frontend | `npm run build` |
+| Backend | restart the agent |
+
+For frontend work, skip both: `npm run dev` serves `:5173` with hot reload and
+proxies `/api` to the agent on `:8000`. The build only matters for what `:8000`
+serves — the demo.
+
+When something "isn't showing up", check in this order before reading any code:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/api/session   # is the agent even alive?
 ```
 
-First-time machine setup:
+No answer means the browser tab is displaying a dead server's last render, which
+looks identical to a frozen UI.
 
-```bash
-python -m GreenIT.scripts.setup_hardware_db          # create hardware.db + placeholder row
-python -m GreenIT.scripts.calibration.recalibrate_cpu   # unplugged
-python -m GreenIT.scripts.calibration.set_baseline      # unplugged
+### 6.2 Calibrating a machine
+
+From the dashboard: **IT setup → Unlock IT Mode →** the walkthrough's sweep
+button. From a terminal, unplugged and with applications closed:
+
+```powershell
+.\.venv\Scripts\python.exe -m GreenIT.scripts.calibration.auto_calibration --quick --no-write
+.\.venv\Scripts\python.exe -m GreenIT.scripts.calibration.auto_calibration
+.\.venv\Scripts\python.exe -m GreenIT.scripts.calibration.validate_model
 ```
 
 Sanity checks: `smoke_test_power_estimator.py` (prints one real estimate),
@@ -345,7 +531,7 @@ Sanity checks: `smoke_test_power_estimator.py` (prints one real estimate),
 
 ## 7. Current state and TODO
 
-*Last updated: 2026-08-17.*
+*Last updated: 2026-08-30.*
 
 ### Working end to end
 
@@ -354,17 +540,73 @@ process runs collection on a background thread and serves both the API and the
 built dashboard on one port — the Netdata model the product is built around.
 
 * Collection, power/energy/carbon estimation and persistence run continuously;
-  ~57,000 measurement rows and ~1,200 telemetry rows accumulated.
-* Real calibration data for the Dell Latitude 7480, backed by 45 raw sweeps.
-* All four API endpoints work, plus SQL-side downsampling on `/api/history`.
-* The recommendation engine fires, persists, and surfaces in the UI.
-* Dashboard has six panels: recommendations, top consumers, power draw,
-  utilisation, disk I/O, network I/O — with a 1h/6h/24h/7d window picker.
+  **279,000 measurement rows over 20 days** at the time of writing.
+* Real calibration data for the Dell Latitude 7480, backed by 45 raw sweeps and
+  validated against held-out data.
+* Twenty-three API endpoints, with SQL-side downsampling and per-collector TTLs.
+* The recommendation engine fires, persists, survives restarts, and surfaces in
+  the UI.
+* **Dashboard split by question** — Today / Live / Machine / IT setup / Guide —
+  rather than twelve identical panels in one column.
 * **Idle-waste detection**: flags a machine left awake with nobody at it,
   costed from real measurements. The only rule that needs no history, so it
   works from the first minute the agent runs.
 * **Per-process attribution**: CPU power split between applications
   (processes grouped by executable name), sampled on the telemetry cadence.
+* **Weekly waste goal** the user sets themselves, with a verdict on the finished
+  week — a target you choose reads as feedback where the same number handed to
+  you reads as a verdict.
+* **Lifecycle panel**: manufacturing carbon against measured operating carbon,
+  plus battery health.
+* **Standing findings ranked into one list** across every rule, rather than
+  three unranked lists leaving the reader to prioritise.
+
+### Shipped 24–30 Aug — IT setup, and calibration from a button
+
+The claim was always "IT calibrates a model and every identical machine picks it
+up". Until this landed, doing so meant editing `hardware.db` by hand — which put
+calibrating a fleet out of reach of the people who own the fleet.
+
+- [x] **A profile can be written from the UI.** `CalibrationWriter` with
+      physical bounds, a file copy before every destructive change, and
+      provenance that is recorded and never upgraded. See §4.2.
+- [x] **IT mode is an in-app switch, and a reversible one.** `--mode it` still
+      works for headless runs, but the mode is now a preference this session can
+      set and clear. The session reports *how* it got there: a flag-started
+      session refuses to leave rather than appearing to succeed, since the flag
+      is re-read on every request and would win again.
+
+      The exit exists in three places, which is deliberate. It started in the
+      setup panel only — and the panel renders *instead* of the walkthrough, so
+      on a machine that had never completed setup the exit was unreachable and
+      IT mode was a one-way door. The topbar badge is now the primary route: the
+      element that NAMES the mode is the one that leaves it, and it is the only
+      exit visible from the views where somebody would notice they are in the
+      wrong mode.
+- [x] **The sweep runs from a button.** `auto_calibration.py` generates its own
+      load, so no operator is needed at the keyboard. It runs in a child process:
+      it saturates every core for minutes, and running it inline would starve
+      the event loop and the collection thread — the dashboard would stop
+      answering during the exact window somebody is watching it.
+- [x] **Static assets carry a cache policy.** Starlette sends an ETag but no
+      `Cache-Control`, so a browser could serve `index.html` from cache without
+      revalidating. That file names which bundle to load; a cached copy points
+      at a bundle the next build deleted, and the page keeps rendering the old
+      application while every file on disk is correct. Cost most of a day to
+      diagnose.
+- [x] **`DEMO-setup.md`** — the demo runbook, with the prerequisites, what the
+      system refuses to do and why, and a troubleshooting table.
+
+### Resolved from the correctness list
+
+- [x] `run_calibration.py` is superseded rather than repaired. Fixing its
+      unpacking bug would not have made it runnable: the imports are unqualified
+      so it raises on import, and `cpu_sweep` blocks on `input()`. Its docstring
+      now says so and points at `auto_calibration.py`.
+- [x] The split import paths no longer block the runtime path — the module the
+      product actually calls uses qualified imports throughout. The older
+      supervised scripts still carry bare `from collectors...` and still only
+      work from one working directory.
 
 ### TODO
 
@@ -620,15 +862,16 @@ of the weekly digest.
 
 **Correctness**
 
-- [ ] `run_calibration.py` unpacks `cpu_intercept, cpu_slope = run_cpu_sweep()`,
-      but that function returns a list of measurement dicts. The script
-      crashes; `recalibrate_cpu.py` is the working path.
+- [x] ~~`run_calibration.py` unpacks a two-tuple from a function returning a
+      list.~~ Superseded rather than repaired — see "Resolved from the
+      correctness list" above.
 - [ ] `recommendations_test.py` calls `engine.evaluate(snapshot)` with one
       argument; the signature now needs `power_watts` too.
-- [ ] Import paths are split: `recalibrate_cpu.py` uses `from GreenIT...`
-      while `run_calibration.py`, `ram_sweep.py`, `cpu_sweep.py`,
-      `set_baseline.py` and `set_coefficient.py` use bare `from collectors...`.
-      Only one of the two works from a given working directory.
+- [ ] The supervised calibration scripts still use bare `from collectors...`
+      imports (`ram_sweep.py` excepted) and only work from one working
+      directory. Not on the runtime path, so this is tidiness rather than a
+      bug — but it is the reason `run_calibration.py` was dead for weeks
+      without anybody noticing.
 
 **Science**
 
@@ -785,9 +1028,14 @@ of the weekly digest.
 |---|---|
 | Per-machine calibration instead of TDP-based estimation | Datasheet TDP is a thermal ceiling, not real draw; regression against battery discharge captures the actual machine |
 | Battery fuel gauge as ground truth | No admin rights, no external hardware, works on any laptop — at the cost of requiring the machine unplugged |
-| Hard failure on unknown machine model | Silent fallback coefficients would produce plausible-looking but wrong numbers, which is worse than an error |
+| Labelled fallback instead of hard failure on an unknown model | The repository still raises, but the service falls back to a CPU-class estimate marked `estimated`. Every machine is uncalibrated for a while, and silence is worse than a labelled approximation |
 | Statistical baseline instead of fixed thresholds for recommendations | "80 % CPU" is normal for a developer and alarming for an office user; the baseline is the user's own history |
-| Two separate SQLite files | `hardware.db` is versioned, shipped and read-only; `ecoinsight.db` is per-installation, mutable and growing |
+| Two separate SQLite files | `hardware.db` is versioned and shipped; `ecoinsight.db` is per-installation, mutable and growing |
 | Two-tier cadence (1.5 s power, 120 s telemetry) | The dashboard needs to feel live; the anomaly baseline needs days of data, not high resolution |
 | Country-specific carbon intensity | A world-average factor would misstate Tunisia's >98 % gas-fired grid in either direction |
 | Estimators take injected component models / intensity factors | Each can be swapped or unit-tested independently, with no database or collector involvement |
+| Filesystem permission as the access control, not the `--mode` flag | Any employee can pass a flag. If a flag were enough to rewrite coefficients, anybody could halve their own reported waste — in a tool whose entire output is a waste figure |
+| Provenance recorded per profile and never upgraded | Typing three numbers is not running a sweep. A typed profile that claimed to be measured would inherit a sweep's authority and switch off the warning that exists to flag it |
+| The sweep refuses rather than storing a weak fit | Scored by cross-validation against a model that ignores the CPU. A bad "measured" profile is worse than an estimate, because nothing downstream can tell it is wrong |
+| A view split by question, not by data source | Twelve identical panels in a column signalled nothing about where to look, and interleaved a weekly digest with a chart that redraws every 1.5 s |
+| Absence rendered as absence | Gaps unfilled, comparisons withheld when history is too thin or calibration moved, no cause named unless one process genuinely dominates. On a tool whose whole output is a waste figure, the standing temptation is to produce a number the data does not support |
