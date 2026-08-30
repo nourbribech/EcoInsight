@@ -1,0 +1,842 @@
+<title>Rapport de stage EcoInsight</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Spectral:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+  /* ---- tokens : palette claire complète ---------------------------------- */
+  :root {
+    --paper:      #f7f9f9;
+    --surface:    #ffffff;
+    --ink:        #111a1c;
+    --muted:      #5a6b6e;
+    --rule:       #dce4e4;
+    --accent:     #0e6f7a;
+    --accent-dim: #e3eef0;
+    --caveat:     #8a5a12;
+    --caveat-dim: #f6eddc;
+
+    --sans: "IBM Plex Sans Condensed", "Segoe UI", system-ui, sans-serif;
+    --serif: Spectral, Georgia, "Times New Roman", serif;
+    --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+
+    --measure: 34rem;
+  }
+
+  /* Réglage OS sombre, sauf si le lecteur a explicitement choisi le clair. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0e1416;
+      --surface:    #141c1e;
+      --ink:        #e6eded;
+      --muted:      #93a5a8;
+      --rule:       #2a3639;
+      --accent:     #5fc2ce;
+      --accent-dim: #173034;
+      --caveat:     #d9a45c;
+      --caveat-dim: #33260f;
+    }
+  }
+
+  /* Choix explicite du sombre : gagne aussi sur un OS clair. */
+  :root[data-theme="dark"] {
+    --paper:      #0e1416;
+    --surface:    #141c1e;
+    --ink:        #e6eded;
+    --muted:      #93a5a8;
+    --rule:       #2a3639;
+    --accent:     #5fc2ce;
+    --accent-dim: #173034;
+    --caveat:     #d9a45c;
+    --caveat-dim: #33260f;
+  }
+
+  /* ---- base --------------------------------------------------------------- */
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 4rem 1.5rem 6rem;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 1rem;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  main {
+    max-width: var(--measure);
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2.75rem;
+  }
+
+  p { margin: 0 0 0.9rem; }
+  p:last-child { margin-bottom: 0; }
+
+  /* ---- couverture --------------------------------------------------------- */
+  .cover {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding-bottom: 2.5rem;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .eyebrow {
+    font-family: var(--sans);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  h1 {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: clamp(2.4rem, 7vw, 3.4rem);
+    line-height: 1.02;
+    letter-spacing: -0.015em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .subtitle {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 1.18rem;
+    color: var(--muted);
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .byline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 2rem;
+    font-family: var(--sans);
+    font-size: 0.86rem;
+    color: var(--muted);
+  }
+
+  .byline b {
+    display: block;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .byline span {
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* ---- sections ----------------------------------------------------------- */
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+
+  h2 {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 1.42rem;
+    line-height: 1.15;
+    letter-spacing: -0.005em;
+    margin: 0;
+    padding-bottom: 0.45rem;
+    border-bottom: 1px solid var(--rule);
+    text-wrap: balance;
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+  }
+
+  /* La numérotation encode une vraie séquence : les chapitres d'un rapport
+     se lisent dans l'ordre et s'y référencent. */
+  h2::before {
+    content: counter(chapter);
+    counter-increment: chapter;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--accent);
+    flex: none;
+  }
+
+  main { counter-reset: chapter; }
+
+  h3 {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 0.98rem;
+    letter-spacing: 0.01em;
+    margin: 0.7rem 0 0;
+    color: var(--ink);
+  }
+
+  /* ---- encadrés ----------------------------------------------------------- */
+  .lead {
+    font-size: 1.1rem;
+    line-height: 1.55;
+    color: var(--ink);
+  }
+
+  .note {
+    border-left: 2px solid var(--accent);
+    background: var(--accent-dim);
+    padding: 0.85rem 1.1rem;
+    font-size: 0.95rem;
+    break-inside: avoid;
+  }
+
+  .caveat {
+    border-left: 2px solid var(--caveat);
+    background: var(--caveat-dim);
+    padding: 0.85rem 1.1rem;
+    font-size: 0.95rem;
+    break-inside: avoid;
+  }
+
+  .caveat .tag,
+  .note .tag {
+    font-family: var(--sans);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 0.3rem;
+  }
+
+  .caveat .tag { color: var(--caveat); }
+  .note .tag { color: var(--accent); }
+
+  /* ---- tableaux ----------------------------------------------------------- */
+  .scroll { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--sans);
+    font-size: 0.88rem;
+    break-inside: avoid;
+  }
+
+  caption {
+    caption-side: top;
+    text-align: left;
+    font-family: var(--sans);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-bottom: 0.5rem;
+  }
+
+  th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0 0.7rem 0.45rem 0;
+    border-bottom: 1px solid var(--ink);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 0.5rem 0.7rem 0.5rem 0;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+
+  td:last-child, th:last-child { padding-right: 0; }
+
+  .num {
+    text-align: right;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  tr.highlight td {
+    background: var(--accent-dim);
+    font-weight: 500;
+  }
+
+  /* ---- chiffres saillants ------------------------------------------------- */
+  .figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    break-inside: avoid;
+  }
+
+  .figure {
+    background: var(--surface);
+    padding: 0.9rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .figure b {
+    font-family: var(--mono);
+    font-size: 1.32rem;
+    font-weight: 500;
+    line-height: 1.1;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .figure span {
+    font-family: var(--sans);
+    font-size: 0.76rem;
+    line-height: 1.3;
+    color: var(--muted);
+  }
+
+  /* ---- formule ------------------------------------------------------------ */
+  .formula {
+    font-family: var(--mono);
+    font-size: 0.94rem;
+    text-align: center;
+    padding: 1rem;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    break-inside: avoid;
+    overflow-x: auto;
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.87em;
+    background: var(--accent-dim);
+    padding: 0.08em 0.32em;
+    border-radius: 2px;
+  }
+
+  ul { margin: 0; padding-left: 1.1rem; }
+  li { margin-bottom: 0.45rem; }
+  li:last-child { margin-bottom: 0; }
+  li::marker { color: var(--accent); }
+
+  strong { font-weight: 500; }
+
+  footer {
+    max-width: var(--measure);
+    margin: 3.5rem auto 0;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--sans);
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  /* ---- impression --------------------------------------------------------- */
+  @page {
+    size: A4;
+    margin: 18mm 16mm;
+  }
+
+  @media print {
+    :root {
+      --paper: #ffffff;
+      --surface: #ffffff;
+      --ink: #000000;
+      --muted: #444c4e;
+      --rule: #c9d3d3;
+      --accent: #0b5b64;
+      --accent-dim: #eef4f5;
+      --caveat: #6f4708;
+      --caveat-dim: #f7f1e5;
+    }
+
+    body {
+      padding: 0;
+      font-size: 10.2pt;
+      line-height: 1.5;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+
+    main { max-width: none; gap: 1.6rem; }
+
+    h1 { font-size: 30pt; }
+    h2 { font-size: 14pt; break-after: avoid; }
+    h3 { break-after: avoid; }
+
+    .cover { break-after: page; padding-bottom: 1.5rem; }
+    section { break-inside: auto; }
+    .figures, table, .note, .caveat, .formula { break-inside: avoid; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<main>
+
+  <header class="cover">
+    <p class="eyebrow">Stage de perfectionnement · 2025–2026</p>
+    <h1>EcoInsight</h1>
+    <p class="subtitle">
+      Mesurer la consommation réelle d'un poste de travail sans matériel
+      externe, et distinguer le gaspillage évitable du travail.
+    </p>
+    <div class="byline">
+      <div><span>Présenté par</span><b>Bribech Nour</b></div>
+      <div><span>Encadré par</span><b>M. Ouna Montasser</b></div>
+      <div><span>Organisme</span><b>Sofrecom Tunisie</b></div>
+    </div>
+  </header>
+
+  <section>
+    <h2>Résumé</h2>
+    <p class="lead">
+      EcoInsight est un agent local qui estime la puissance consommée par un
+      poste Windows, la convertit en énergie et en émissions de CO₂, et signale
+      la part de cette consommation qui était évitable.
+    </p>
+    <p>
+      Sa particularité tient à la façon dont le modèle de puissance est obtenu.
+      Plutôt que de partir du TDP constructeur — une enveloppe thermique, pas
+      une consommation — les coefficients sont <strong>mesurés sur la machine
+      elle-même</strong> : la batterie sert de wattmètre, sa vitesse de décharge
+      donnant la puissance réellement tirée sous une charge processeur
+      contrôlée. Une régression linéaire en déduit un profil propre au modèle de
+      machine, et ce profil n'est retenu qu'après avoir été confronté à des
+      données qu'il n'a jamais vues.
+    </p>
+    <div class="figures">
+      <div class="figure"><b>279 389</b><span>mesures collectées sur 20 jours</span></div>
+      <div class="figure"><b>0,852</b><span>R² en validation croisée</span></div>
+      <div class="figure"><b>8,5 %</b><span>erreur relative hors échantillon</span></div>
+      <div class="figure"><b>27 %</b><span>d'énergie consommée machine inoccupée</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Contexte et problématique</h2>
+    <p>
+      Le Green IT ne consiste pas à utiliser le numérique pour verdir autre
+      chose, mais à réduire l'empreinte du numérique lui-même. Trois leviers
+      existent — fabriquer moins, consommer moins, et mesurer — et le troisième
+      conditionne les deux autres : sans mesure, on optimise à l'aveugle. Or
+      l'effort d'instrumentation porte massivement sur les centres de données.
+      Le poste de travail reste peu instrumenté.
+    </p>
+
+    <h3>Le déséquilibre fabrication / usage</h3>
+    <p>
+      Pour un ordinateur portable, l'essentiel du carbone est émis avant même la
+      mise en service. Mesuré sur la machine de référence, la consommation
+      d'usage représente environ <strong>12,9 kg CO₂eq par an</strong>, face à
+      un coût de fabrication estimé autour de <strong>300 kg</strong> — soit
+      près de vingt-trois années d'usage, et 82 % du carbone de cycle de vie.
+      Conserver la machine une année de plus évite davantage d'émissions que
+      près de quatre ans de sa propre électricité.
+    </p>
+    <div class="caveat">
+      <span class="tag">Réserve</span>
+      Le chiffre de fabrication est une estimation de classe, non une fiche
+      constructeur, et les empreintes publiées portent elles-mêmes une
+      incertitude large. À l'inverse, les émissions d'usage sont extrapolées
+      d'une fenêtre partielle, donc sous-estimées : le rapport de vingt-trois
+      ans est un plancher.
+    </div>
+
+    <h3>L'utilisateur développeur</h3>
+    <p>
+      Dans une entreprise de services numériques, la majorité des postes sont
+      des postes de développement, et ce sont les plus énergivores du parc :
+      compilations répétées, conteneurs et machines virtuelles laissés actifs la
+      nuit, environnements démarrés une fois et jamais arrêtés. Un développeur
+      ne laisse pas tourner une machine virtuelle par négligence, mais parce que
+      rien ne lui indique que cela coûte quelque chose.
+    </p>
+    <p>
+      La chaîne du problème est donc simple : pas de mesure, pas de visibilité ;
+      pas de visibilité, pas d'action ; et le gaspillage persiste.
+    </p>
+  </section>
+
+  <section>
+    <h2>État de l'existant</h2>
+    <div class="scroll">
+      <table>
+        <caption>Approches disponibles et ce qui les bloque</caption>
+        <thead>
+          <tr><th>Approche</th><th>Apporte</th><th>Bloque</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Prises connectées, wattmètres</td><td>Mesure physique fiable</td><td>Coût et logistique par poste</td></tr>
+          <tr><td>Utilitaires constructeur</td><td>Informations batterie</td><td>Ni historique, ni carbone</td></tr>
+          <tr><td>Estimation par TDP</td><td>Immédiate, sans mesure</td><td>Générique : deux machines identiques sur le papier ne consomment pas pareil</td></tr>
+          <tr><td>Outils orientés serveurs</td><td>Matures, précis</td><td>Conçus pour Linux et centre de données</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Chacune résout une moitié du problème. Le wattmètre mesure bien mais ne se
+      déploie pas ; le TDP se déploie partout mais ne mesure rien. Ce qui manque
+      est le chaînon entre la mesure et la décision de l'utilisateur.
+    </p>
+    <div class="note">
+      <span class="tag">Pourquoi le TDP ne suffit pas</span>
+      Les watts par pourcent de processeur ne sont pas une propriété du
+      processeur : cela dépend de la gestion d'énergie de la plateforme, de son
+      refroidissement, et de ce que le système appelle « 100 % ». Tout chiffre
+      publié est la régression de quelqu'un d'autre sur une autre machine.
+    </div>
+  </section>
+
+  <section>
+    <h2>Architecture et choix techniques</h2>
+    <p>
+      L'application est un agent local unique : la collecte tourne sur un fil
+      d'exécution de fond pendant que le même processus sert l'interface et son
+      API sur un port local. Si l'agent tourne, la collecte tourne — la version
+      précédente, en deux processus séparés, laissait le tableau de bord servir
+      des données figées quand le collecteur mourait.
+    </p>
+    <div class="scroll">
+      <table>
+        <caption>Chaîne de traitement</caption>
+        <thead>
+          <tr><th>Étape</th><th>Moyen</th><th>Produit</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Collecte</td><td>psutil, WMI, DDC/CI</td><td>Instantané système horodaté</td></tr>
+          <tr><td>Estimation</td><td>Modèle linéaire calibré</td><td>Puissance en watts</td></tr>
+          <tr><td>Intégration</td><td>Puissance × durée réelle</td><td>Énergie en Wh</td></tr>
+          <tr><td>Conversion</td><td>483 gCO₂eq/kWh</td><td>Émissions</td></tr>
+          <tr><td>Restitution</td><td>FastAPI, React</td><td>Tableau de bord et recommandations</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="formula">
+      P<sub>totale</sub> = P<sub>base</sub> + α<sub>CPU</sub> × CPU% + α<sub>RAM</sub> × RAM<sub>Go</sub>
+    </div>
+    <p>
+      Le code suit une règle de dépendance à sens unique : les estimateurs ne
+      touchent jamais à la base de données ni au système. Ce sont des fonctions
+      pures d'un instantané et d'un profil de calibration, ce qui les rend
+      testables et permet de changer les coefficients sans toucher à la logique.
+    </p>
+  </section>
+
+  <section>
+    <h2>Calibration</h2>
+    <p>
+      La batterie est un wattmètre déjà présent dans la machine : sa vitesse de
+      décharge donne la puissance réellement consommée, en watts, sans matériel
+      externe ni droits administrateur. La contrepartie est que le poste doit
+      être débranché pendant la mesure.
+    </p>
+
+    <h3>Protocole</h3>
+    <p>
+      La procédure amène le processeur à plusieurs niveaux de charge et relève
+      simultanément l'utilisation observée et la puissance tirée. Quatre points
+      de méthode méritent d'être soulignés, car ce sont eux qui séparent une
+      mesure d'un chiffre.
+    </p>
+    <ul>
+      <li>
+        <strong>La régression porte sur l'utilisation réellement mesurée</strong>,
+        jamais sur la charge visée. Demander 75 % n'en donne pas 75 % ;
+        enregistrer la consigne introduirait une erreur systématique invisible.
+      </li>
+      <li>
+        <strong>Les niveaux sont visités dans un ordre aléatoire.</strong> La
+        tension batterie baisse, la machine chauffe : tout ce qui évolue avec le
+        temps se répartirait sinon sur les derniers niveaux échantillonnés et se
+        ferait passer pour un effet processeur.
+      </li>
+      <li>
+        <strong>La consommation de base est mesurée séparément au repos</strong>,
+        et non lue sur l'ordonnée à l'origine. Les mesures ne descendant jamais
+        sous 22 % de charge, cette ordonnée serait une extrapolation hors de la
+        plage observée.
+      </li>
+      <li>
+        <strong>La procédure refuse de s'exécuter sur une machine occupée.</strong>
+        Le balayage ne peut qu'ajouter de la charge : sur un poste déjà à 85 %,
+        tous les niveaux mesurent près du plafond et la régression n'a plus
+        d'amplitude.
+      </li>
+    </ul>
+
+    <div class="note">
+      <span class="tag">Un détail qui se vérifie</span>
+      L'ordonnée à l'origine vaut 4,69 W et la consommation de base 1,92 W. La
+      différence n'est pas une contradiction : elle correspond exactement à la
+      mémoire occupée pendant le balayage, soit 0,375 W/Go × 7,4 Go ≈ 2,78 W.
+    </div>
+
+    <h3>Déploiement à l'échelle d'un parc</h3>
+    <p>
+      La calibration appartient à un <strong>modèle de machine</strong>, pas à
+      une machine : un balayage effectué sur un exemplaire vaut pour tous les
+      postes identiques. L'équipe informatique calibre donc un modèle depuis
+      l'interface, sans ligne de commande, et les machines concernées récupèrent
+      le profil sans redémarrage.
+    </p>
+    <p>
+      L'origine de chaque profil est enregistrée et ne peut jamais être
+      requalifiée : <code>mesuré</code> signifie qu'un balayage a eu lieu,
+      <code>saisi</code> que des valeurs ont été renseignées à la main, et
+      <code>estimé</code> décrit un repli calculé à partir de la classe du
+      processeur. Le formulaire de saisie enregistre toujours en
+      <code>saisi</code> — taper trois nombres n'est pas exécuter une mesure.
+    </p>
+    <div class="note">
+      <span class="tag">Contrôle d'accès</span>
+      Le mode « informatique » de l'application est un affichage, pas une
+      permission. Le contrôle réel est la permission d'écriture sur le fichier
+      de calibration, appliquée par le système d'exploitation. Sur un outil dont
+      toute la sortie est un chiffre de gaspillage, un simple drapeau
+      permettrait à chacun de diviser sa propre consommation rapportée.
+    </div>
+  </section>
+
+  <section>
+    <h2>Validation du modèle</h2>
+    <p>
+      Obtenir un coefficient est facile ; savoir s'il vaut quelque chose demande
+      de le confronter à des données qu'il n'a jamais vues. Le modèle a été
+      évalué sur 45 mesures réparties en neuf campagnes et trois sessions.
+    </p>
+    <div class="scroll">
+      <table>
+        <caption>Qualité d'ajustement — Dell Latitude 7480</caption>
+        <thead>
+          <tr>
+            <th>Modèle</th>
+            <th class="num">Erreur moy.</th>
+            <th class="num">Erreur rel.</th>
+            <th class="num">R²</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>En échantillon</td>
+            <td class="num">0,89 W</td><td class="num">8,0 %</td><td class="num">0,869</td>
+          </tr>
+          <tr class="highlight">
+            <td>Validation croisée, une campagne retirée</td>
+            <td class="num">0,95 W</td><td class="num">8,5 %</td><td class="num">0,852</td>
+          </tr>
+          <tr>
+            <td>Validation croisée, une session retirée</td>
+            <td class="num">0,95 W</td><td class="num">8,7 %</td><td class="num">0,861</td>
+          </tr>
+          <tr>
+            <td>Modèle nul — prédit la moyenne</td>
+            <td class="num">2,92 W</td><td class="num">28,8 %</td><td class="num">−0,014</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Trois conclusions s'en dégagent. <strong>Le modèle généralise</strong> :
+      l'erreur hors échantillon dépasse à peine l'erreur en échantillon, donc il
+      n'est pas surajusté. <strong>Il bat le modèle nul d'un facteur trois</strong>,
+      ce qui est la comparaison que le coefficient de détermination effectue
+      silencieusement et que l'on vérifie rarement. Et <strong>la relation reste
+      stable d'un jour à l'autre</strong>, puisque retirer une session entière
+      donne le même résultat que retirer une campagne.
+    </p>
+    <div class="note">
+      <span class="tag">Pourquoi le R² seul ne suffit pas</span>
+      Un R² calculé sur les données ayant servi à l'ajustement ne peut
+      structurellement jamais être mauvais, et ne peut donc jamais alerter. Un
+      R² en validation croisée, lui, <em>peut devenir négatif</em> : cela
+      signifie que le modèle prédit moins bien que la simple moyenne. C'est pour
+      cela que la calibration est refusée sous un seuil, et que le profil estimé
+      est conservé plutôt qu'un profil « mesuré » sans fondement.
+    </div>
+
+    <h3>Un résultat nul, correctement établi</h3>
+    <p>
+      Un balayage mémoire de 360 échantillons, sur six niveaux d'allocation
+      visités en ordre aléatoire, place le coefficient mémoire à
+      <strong>−0,090 ± 0,215 W/Go</strong>, intervalle de confiance
+      [−0,305 ; +0,126]. La valeur de littérature employée, 0,375 W/Go de
+      mémoire utilisée, se situe hors de cet intervalle ; zéro s'y trouve.
+    </p>
+    <p>
+      La manipulation étant vérifiée — l'allocation a bien fait progresser la
+      mémoire occupée de façon monotone — il s'agit d'un vrai résultat nul et
+      non d'une expérience ratée. Cela n'invalide pas pour autant la
+      littérature : la puissance de rafraîchissement de la mémoire dépend de la
+      capacité <em>installée</em>, non des octets effectivement utilisés. C'est
+      donc une constante, et une constante est exactement ce que l'expérience
+      observe, absorbée dans l'ordonnée à l'origine.
+    </p>
+    <div class="caveat">
+      <span class="tag">Question ouverte</span>
+      Ce même balayage place le coefficient processeur à 0,1345 ± 0,0123 W/%,
+      intervalle qui <strong>exclut</strong> la valeur calibrée de 0,1053. Deux
+      expériences sur la même machine, à douze jours d'écart, divergent d'environ
+      28 %. La colinéarité entre les deux termes étant faible, ce n'est pas un
+      artefact d'ajustement. Les causes candidates — charge synthétique contre
+      charge réelle, fenêtres d'échantillonnage, état thermique — se
+      départageraient par une expérience unique : un balayage sous les deux types
+      de charge dans une même session. Tant qu'elle n'a pas lieu, aucune des deux
+      valeurs n'est défendable contre l'autre.
+    </div>
+  </section>
+
+  <section>
+    <h2>Résultats</h2>
+    <p>
+      Vingt jours de collecte continue sur la machine de référence ont produit
+      près de 280 000 mesures. Le moteur de détection s'appuie sur cet historique
+      pour distinguer ce qui est inhabituel <em>pour cette machine</em> de ce qui
+      relève du fonctionnement normal.
+    </p>
+    <div class="scroll">
+      <table>
+        <caption>Gaspillage identifié</caption>
+        <thead>
+          <tr><th>Constat</th><th class="num">Mesure</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Énergie consommée machine inoccupée</td><td class="num">27 %</td></tr>
+          <tr><td>Énergie consommée hors 8h–19h</td><td class="num">28 %</td></tr>
+          <tr><td>Dont week-end</td><td class="num">67 Wh</td></tr>
+          <tr><td>Coût d'une journée entière de navigateur</td><td class="num">1,27 Wh</td></tr>
+          <tr><td>Santé de la batterie</td><td class="num">46 %</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Le rapprochement des deux premières lignes avec la quatrième porte
+      l'argument central du projet : plus du quart de l'énergie part dans une
+      machine que personne n'utilise, quand une journée entière de navigation
+      coûte à peine plus d'un wattheure. « Le processeur est anormalement
+      chargé » décrit un ordinateur en train de faire son travail ; aucune
+      formulation ne rachète un signalement sans action attachée.
+    </p>
+
+    <h3>Rendre le signal utilisable</h3>
+    <p>
+      La première règle de détection, fondée sur un écart-type, se déclenchait
+      sur 11,3 % des échantillons — une notification toutes les dix-huit
+      minutes, inutilisable. Remplacer l'écart-type par un percentile n'a
+      pratiquement rien changé : un percentile glissant se déclenche par
+      construction sur une fraction fixe des échantillons, quelle que soit la
+      machine. Seule l'exigence de <strong>persistance</strong> — cinq
+      échantillons consécutifs — a fait tomber le débit à moins d'une
+      notification par jour.
+    </p>
+    <div class="note">
+      <span class="tag">Un piège instructif</span>
+      Un seuil d'impact énergétique, d'abord intégré à la condition de
+      déclenchement, a fait <em>augmenter</em> les notifications de 2,3 à 5,7 par
+      jour : une puissance oscillant autour du seuil découpait un épisode unique
+      en plusieurs, chacun se ré-annonçant. Ce seuil ne devait pas conditionner
+      l'appartenance à l'épisode, seulement le fait de parler.
+    </div>
+  </section>
+
+  <section>
+    <h2>Limites</h2>
+    <ul>
+      <li>
+        <strong>La décomposition par composant n'est pas physique.</strong> Le
+        total est défendable ; la répartition entre processeur, mémoire et
+        consommation de base ne l'est pas.
+      </li>
+      <li>
+        <strong>Deux estimations du coefficient processeur divergent de 28 %</strong>,
+        avec des intervalles disjoints. Non résolu.
+      </li>
+      <li>
+        <strong>L'écran n'entre pas dans le modèle</strong>, alors que la dalle
+        est l'un des plus gros consommateurs d'un portable. La luminosité est
+        relevée et affichée, mais absorbée dans le terme constant.
+      </li>
+      <li>
+        <strong>Un seul modèle de machine est calibré.</strong> La prémisse est
+        un parc standardisé ; un échantillon de un ne la teste pas.
+      </li>
+      <li>
+        <strong>La méthode exige une batterie.</strong> Un poste fixe reste hors
+        de portée.
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Bilan et perspectives</h2>
+    <p>
+      Le projet a produit une chaîne complète, de la lecture des compteurs
+      système jusqu'à une recommandation adressée à l'utilisateur, en passant
+      par un modèle physique et sa validation statistique.
+    </p>
+    <p>
+      La plupart des défaillances rencontrées ont été <strong>silencieuses</strong> :
+      un code de retour annonçait un succès, un tableau de bord paraissait
+      normal, un rapport d'état s'affichait vert. L'intégration de la puissance
+      à travers une mise en veille a ainsi enregistré 641 Wh en un seul relevé,
+      et la correction de l'historique a retiré 77 % du total accumulé. Un autre
+      cas mérite d'être cité pour ce qu'il enseigne : l'ouverture répétée de la
+      connexion au capteur consommait assez de processeur pour être visible dans
+      la mesure — l'instrument faussait sa propre lecture.
+    </p>
+    <p>
+      Ce que je retiens est d'abord méthodologique. Sur un outil dont toute la
+      sortie est un chiffre de gaspillage, la tentation permanente est de
+      produire un chiffre même lorsque la donnée ne le permet pas. Apprendre à
+      afficher « je ne sais pas » — un trou laissé visible, une comparaison
+      retenue, une cause non nommée faute de responsable dominant — a été le
+      choix de conception le plus structurant du projet.
+    </p>
+
+    <h3>Suites envisageables</h3>
+    <ul>
+      <li>
+        <strong>Calibrer un deuxième modèle de machine.</strong> C'est
+        l'expérience la plus rentable : elle valide le rapport utilisé pour les
+        modèles non mesurés, et transforme un expédient en premier point d'un
+        modèle de parc.
+      </li>
+      <li>
+        <strong>Trancher le désaccord sur le coefficient processeur</strong> par
+        un balayage sous les deux types de charge dans une même session.
+      </li>
+      <li>
+        <strong>Intégrer la luminosité au modèle de puissance</strong> : le
+        mécanisme est clair et le protocole connu.
+      </li>
+      <li>
+        <strong>Relier la mesure à la décision de renouvellement.</strong> Si
+        l'essentiel du carbone est émis à la fabrication, la décision la plus
+        importante n'est pas de réduire la consommation d'un poste, mais de
+        décider s'il faut le remplacer. Mesurer l'usage fournit le dénominateur
+        qui permet d'argumenter le report.
+      </li>
+    </ul>
+  </section>
+
+</main>
+
+<footer>
+  EcoInsight · Stage de perfectionnement, Sofrecom Tunisie, 2026 · Machine de
+  référence : Dell Latitude 7480, Intel i5-6300U · Intensité carbone retenue :
+  483 gCO₂eq/kWh (réseau tunisien)
+</footer>

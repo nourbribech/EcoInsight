@@ -52,6 +52,13 @@ identifier.sqlite
 *.sqlite-shm
 *.sqlite-wal
 
+# Claude Code: settings.json is shared project configuration and IS tracked.
+# settings.local.json is the personal override - it accumulates one-off
+# permissions granted during a debugging session, including hardcoded ports
+# from whatever was being tested that day, and means nothing on another
+# machine.
+.claude/settings.local.json
+
 # Scratch
 temp.py
 *.log
