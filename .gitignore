@@ -27,9 +27,21 @@ backend/GreenIT/data/*.db-journal
 backend/GreenIT/data/*.db-wal
 backend/GreenIT/data/*.db-shm
 backend/GreenIT/data/*.backup-*.db
+# Isolated session databases from `--database ./test-user.db`. They live at the
+# backend root rather than under GreenIT/data, so the rule above misses them,
+# and they reached 270+ measurement rows within minutes of testing.
+backend/*.db
+backend/*.db-wal
+backend/*.db-shm
 # Rotated logs too: the bare *.log rule further down does not match
 # agent.log.20260822, so a rotation left an 2.7 MB file staged for commit.
 backend/GreenIT/data/agent.log*
+
+# ...but its automatic backups are. CalibrationWriter copies hardware.db
+# before every save and delete, because that file is the only record of every
+# sweep anybody has run and re-measuring a model costs hours of controlled
+# discharge. The copies are 20 KB each and accumulate one per edit.
+backend/GreenIT/database/data/*.backup-*.db
 
 # hardware.db is deliberately NOT ignored: it holds the per-machine
 # calibration profile, it is 20 KB, and it changes only when somebody reruns a
