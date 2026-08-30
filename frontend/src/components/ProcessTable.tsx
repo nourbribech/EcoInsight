@@ -18,12 +18,12 @@ export function ProcessTable() {
     POLL_MS,
   )
 
-  if (loading) return <div className="chart-empty">Loading…</div>
-  if (error) return <div className="chart-empty">Unavailable: {error}</div>
+  if (loading) return <div className="chart-empty">Finding your top apps…</div>
+  if (error) return <div className="chart-empty">Top apps are unavailable right now.</div>
   if (!data || data.length === 0) {
     return (
       <div className="chart-empty">
-        No sample yet — the first one lands within ~2 minutes of the agent starting.
+        No app data yet — it should appear within about 2 minutes.
       </div>
     )
   }
@@ -34,7 +34,8 @@ export function ProcessTable() {
   const peak = Math.max(...data.map((row) => row.estimated_watts), 0.0001)
 
   return (
-    <table className="process-table">
+    <div className="process-table-wrap">
+      <table className="process-table">
       <thead>
         <tr>
           <th>Application</th>
@@ -68,6 +69,7 @@ export function ProcessTable() {
           </tr>
         ))}
       </tbody>
-    </table>
+      </table>
+    </div>
   )
 }

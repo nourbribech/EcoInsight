@@ -107,15 +107,38 @@ export interface PeriodSummary {
    * reporting a spectacular number derived from ten minutes of history.
    */
   change_percent: number | null
+  /** Why the comparison was withheld: 'calibration_changed' when the
+   *  coefficients moved inside the window, 'insufficient_history' when the
+   *  earlier period lacks comparable sample coverage. */
+  change_blocked_reason: 'calibration_changed' | 'insufficient_history' | null
+  profile_changes: { timestamp: string; machine_model: string; source: string; baseline_watts: number }[]
   per_day: DayTotal[]
   top_applications: { name: string; label: string | null; watt_hours: number }[]
   idle_awake_watt_hours: number | null
+  /** Idle energy over energy on the TRACKED days, not over the whole period. */
   idle_awake_share: number | null
+  energy_on_tracked_days_wh: number | null
   days_tracked: number
   /** Human-scale restatements of the same figures. Empty when the period is
    *  too small for any comparison to be meaningful. */
   equivalences: { label: string; value: number; kind: 'energy' | 'carbon' }[]
   offhours: OffHours
+  /**
+   * Null when idle tracking has not run for `rating_minimum_days`. Absent is
+   * rendered explicitly, never as a passing grade.
+   */
+  rating: WasteRating | null
+  rating_minimum_days: number
+}
+
+/** A tier for how much of the period's energy was avoidable. */
+export interface WasteRating {
+  tier: 'excellent' | 'good' | 'fair' | 'poor'
+  label: string
+  detail: string
+  share: number
+  /** Share needed to reach the next band up; null when already at the top. */
+  next_tier_share: number | null
 }
 
 /** Energy drawn outside working hours, plus the shape of a typical day. */
@@ -145,4 +168,126 @@ export interface Insights {
   findings: Finding[]
   settings: Record<string, unknown>
   observed: Record<string, unknown>
+}
+
+/** GET /api/lifecycle — manufacturing carbon against operating carbon. */
+export interface Lifecycle {
+  machine_model: string
+  embodied_kg: number
+  /** True when no manufacturer datasheet is on file and a class figure was used. */
+  embodied_is_estimate: boolean
+  embodied_low_kg: number
+  embodied_high_kg: number
+  annual_operating_kg: number
+  /** Null until enough operating data exists to divide by. */
+  years_of_operation_equivalent: number | null
+  manufacturing_share: number | null
+  one_more_year_saves_kg: number
+  one_more_year_in_operating_years: number | null
+  service_life_years: number
+  measured_days: number
+  battery: {
+    available: boolean
+    design_mwh: number | null
+    full_charge_mwh: number | null
+    health_percent: number | null
+  }
+}
+
+/** GET/PUT /api/goal — the soft weekly target and progress against it. */
+export interface Goal {
+  target_share: number
+  default_target_share: number
+  minimum_target_share: number
+  maximum_target_share: number
+  /** Null while nobody has chosen one, so the panel can say "assumed"
+   *  rather than implying the user picked the default. */
+  chosen_at: string | null
+  week_start: string
+  week_end: string
+  status: GoalStatus
+  /** Null when the finished week carries too little tracking to judge —
+   *  rendered as an absence, never as a pass. */
+  previous_week: GoalVerdict | null
+}
+
+export interface GoalStatus {
+  target_share: number
+  share: number | null
+  state: 'no_data' | 'too_early' | 'on_track' | 'close' | 'over'
+  headline: string
+  detail: string
+  wasted_watt_hours: number | null
+  /** What the target allows over the whole week, projected from the pace so
+   *  far. Null before enough of the week has elapsed to project honestly. */
+  budget_watt_hours: number | null
+  /** What it allows for the energy used so far. */
+  pace_watt_hours: number | null
+  remaining_watt_hours: number | null
+  elapsed_fraction: number
+  days_tracked: number
+}
+
+export interface GoalVerdict {
+  share: number
+  met: boolean
+  wasted_watt_hours: number | null
+  days_tracked: number
+}
+
+/** GET /api/workloads — developer workloads left running (today, WSL). */
+export interface Workloads {
+  wsl: {
+    /** False means the question could not be asked — no WSL, or the command
+     *  failed. NOT the same as "no distributions", and never rendered as such. */
+    available: boolean
+    installed: string[]
+    running: string[]
+    docker: boolean
+    vm: {
+      running: boolean
+      pid: number | null
+      /** Host CPU, normalised over cores. Null on the first sample after the
+       *  agent starts — there is no baseline to diff against yet. */
+      cpu_percent: number | null
+      memory_bytes: number | null
+      uptime_seconds: number | null
+      attached_sessions: number
+    }
+  }
+  history: {
+    samples: number
+    running_samples: number
+    running_hours: number
+    observed_hours: number
+    peak_cpu_percent: number | null
+    mean_cpu_percent: number | null
+    peak_memory_bytes: number | null
+    unattended_samples: number
+    unattended_hours: number
+  }
+  findings: Finding[]
+  calibration_source: string
+  days: number
+}
+
+/** GET /api/actions — every standing finding, ranked, from all rules. */
+export interface Actions {
+  actions: Action[]
+  summary: ActionSummary
+  calibration_source: string
+}
+
+/** A Finding plus which rule produced it. */
+export interface Action extends Finding {
+  source: string
+}
+
+export interface ActionSummary {
+  total: number
+  /** Excludes `ok` rows — those are reassurance, not work. */
+  todo: number
+  yours: number
+  needs_it: number
+  high: number
 }

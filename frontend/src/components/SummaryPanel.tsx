@@ -1,5 +1,5 @@
 import { usePolling } from '../hooks/usePolling'
-import type { OffHours, PeriodSummary } from '../types/api'
+import type { PeriodSummary, WasteRating } from '../types/api'
 
 /** Nothing here changes faster than the telemetry cadence. */
 const POLL_MS = 60_000
@@ -12,16 +12,16 @@ const POLL_MS = 60_000
  * its own can't do that: 476 Wh is meaningless without either a comparison
  * or a share, so every figure here carries one.
  */
-export function SummaryPanel({ days }: { days: number }) {
+export function SummaryPanel({ days, end }: { days: number; end?: string }) {
   const { data, error, loading } = usePolling<PeriodSummary>(
-    `/api/summary?days=${days}`,
+    `/api/summary?days=${days}${end ? `&end=${encodeURIComponent(end)}` : ''}`,
     POLL_MS,
   )
 
-  if (loading) return <div className="chart-empty">Loading…</div>
-  if (error) return <div className="chart-empty">Summary unavailable: {error}</div>
+  if (loading) return <div className="chart-empty">Loading your weekly summary…</div>
+  if (error) return <div className="chart-empty">Your weekly summary is unavailable right now.</div>
   if (!data || data.current.samples === 0) {
-    return <div className="chart-empty">No measurements in this period yet.</div>
+    return <div className="chart-empty">No readings for this week yet.</div>
   }
 
   const peak = Math.max(...data.per_day.map((d) => d.watt_hours), 1)
@@ -32,7 +32,7 @@ export function SummaryPanel({ days }: { days: number }) {
         <Figure
           label={`Energy · last ${data.days} days`}
           value={`${data.current.watt_hours.toFixed(0)} Wh`}
-          detail={formatChange(data.change_percent)}
+          detail={formatChange(data.change_percent, data.change_blocked_reason)}
         />
         <Figure
           label="Carbon"
@@ -42,9 +42,13 @@ export function SummaryPanel({ days }: { days: number }) {
         <Figure
           label="Spent with nobody there"
           value={formatWaste(data)}
+          // Says WHICH days the percentage is a share of. The figure is
+          // idle energy over energy on the tracked days only — a share
+          // against the full period would divide a 3-day numerator by a
+          // 7-day total and report 5.3% where the answer is 13.9%.
           detail={
             data.days_tracked > 0
-              ? `idle tracking on ${data.days_tracked} of ${data.days} days`
+              ? `share of the ${data.days_tracked} day${data.days_tracked === 1 ? '' : 's'} idle was tracked`
               : 'idle not tracked yet'
           }
           // The one figure on the dashboard that is entirely avoidable, so it
@@ -52,6 +56,12 @@ export function SummaryPanel({ days }: { days: number }) {
           highlight
         />
       </div>
+
+      <WasteTier
+        rating={data.rating}
+        minimumDays={data.rating_minimum_days}
+        daysTracked={data.days_tracked}
+      />
 
       {data.equivalences.length > 0 && (
         /*
@@ -86,19 +96,12 @@ export function SummaryPanel({ days }: { days: number }) {
         ))}
       </div>
 
-      <OffHoursProfile offhours={data.offhours} />
-
-      {data.top_applications.length > 0 && (
-        <div className="summary-apps">
-          <span className="summary-apps-label">Costliest applications</span>
-          {data.top_applications.map((application) => (
-            <span className="summary-app" key={application.name}>
-              {application.label ?? application.name}
-              <b>{application.watt_hours.toFixed(1)} Wh</b>
-            </span>
-          ))}
-        </div>
-      )}
+      {/*
+        The 24-hour draw profile and the costliest-application list moved to
+        PatternsPanel on the Live view. They are analysis - where did it go,
+        and when - where everything left here is a verdict. Six sub-blocks in
+        one panel made this a dashboard inside a dashboard.
+      */}
     </div>
   )
 }
@@ -109,7 +112,21 @@ export function SummaryPanel({ days }: { days: number }) {
  * coverage — saying so is more useful than an empty space the reader has to
  * interpret.
  */
-function formatChange(changePercent: number | null): string {
+/**
+ * A withheld comparison names its own reason.
+ *
+ * Both reasons produce a null change_percent, and saying "not enough history"
+ * when the truth is "your machine was recalibrated" would blame the user's
+ * data for the tool's own change - and hide the one fact that explains why
+ * this week's watts are not comparable to last week's.
+ */
+function formatChange(
+  changePercent: number | null,
+  blockedReason: string | null = null,
+): string {
+  if (blockedReason === 'calibration_changed') {
+    return 'not compared — this machine was recalibrated in this period'
+  }
   if (changePercent === null) return 'not enough history to compare'
   const direction = changePercent < 0 ? 'less' : 'more'
   return `${Math.abs(changePercent).toFixed(0)}% ${direction} than the period before`
@@ -136,52 +153,41 @@ function Figure({
 
 
 /**
- * When the machine actually drew power, by hour of day.
+ * The period's tier, or an explicit statement that there is not enough
+ * evidence for one.
  *
- * The number on its own does not persuade anybody — "136 Wh outside working
- * hours" is a statistic. Twenty-four bars with the small hours clearly lit is
- * an argument, and it is the one office finding an employee can act on
- * without asking anyone's permission.
+ * It grades the WASTE SHARE, not the energy total. Grading consumption would
+ * grade how much somebody worked and how much they were at their desk, and
+ * hand the best score to whoever was on leave. A ratio is neutral to both:
+ * working more cannot hurt it, and it is the only part of the figure the
+ * person is able to change.
+ *
+ * The "not rated yet" state is rendered rather than hidden. An absent grade
+ * that looks like blank space reads as a passing one.
  */
-function OffHoursProfile({ offhours }: { offhours: OffHours }) {
-  const peak = Math.max(...offhours.by_hour, 1)
-  const share = offhours.offhours_share
-
-  return (
-    <div className="offhours">
-      <div className="offhours-head">
-        <span className="summary-apps-label">Draw by hour of day</span>
-        <span className="offhours-figure">
-          {offhours.offhours_watt_hours.toFixed(0)} Wh outside{' '}
-          {offhours.workday_start_hour}:00–{offhours.workday_end_hour}:00
-          {share !== null && ` · ${(share * 100).toFixed(0)}%`}
-          {offhours.weekend_watt_hours > 0 &&
-            `, of which ${offhours.weekend_watt_hours.toFixed(0)} Wh at weekends`}
+function WasteTier({
+  rating, minimumDays, daysTracked,
+}: { rating: WasteRating | null; minimumDays: number; daysTracked: number }) {
+  if (rating === null) {
+    return (
+      <div className="tier tier-unrated">
+        <span className="tier-badge">Not rated yet</span>
+        <span className="tier-text">
+          Needs {minimumDays} days of idle tracking to judge — {daysTracked} so far.
         </span>
       </div>
-      <div className="offhours-bars">
-        {offhours.by_hour.map((wattHours, hour) => {
-          const isWorkHour =
-            hour >= offhours.workday_start_hour && hour < offhours.workday_end_hour
-          return (
-            <div
-              className="offhours-hour"
-              key={hour}
-              title={`${String(hour).padStart(2, '0')}:00 — ${wattHours.toFixed(1)} Wh`}
-            >
-              <div className="offhours-track">
-                <div
-                  /* Off-hours bars carry the alert colour: the same height
-                     means something different at 03:00 than at 15:00. */
-                  className={`offhours-bar${isWorkHour ? '' : ' offhours-bar-off'}`}
-                  style={{ height: `${(wattHours / peak) * 100}%` }}
-                />
-              </div>
-              {hour % 6 === 0 && <span className="offhours-tick">{hour}</span>}
-            </div>
-          )
-        })}
-      </div>
+    )
+  }
+
+  return (
+    <div className={`tier tier-${rating.tier}`}>
+      <span className="tier-badge">{rating.label}</span>
+      <span className="tier-text">
+        {rating.detail}{' '}
+        {rating.next_tier_share === null
+          ? 'This is the best band.'
+          : `Getting below ${(rating.next_tier_share * 100).toFixed(0)}% would reach the next band.`}
+      </span>
     </div>
   )
 }

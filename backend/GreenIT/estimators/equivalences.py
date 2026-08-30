@@ -38,6 +38,18 @@ LED_BULB_WATTS = 9.0
 # conservative end of the comparison.
 CAR_GRAMS_CO2_PER_KM = 120.0
 
+# CO2 absorbed by one mature tree in a year. This figure varies enormously
+# with species, age and climate — published estimates run from about 10 kg to
+# 40 kg — so it is the softest comparison here by some margin and is phrased
+# as absorption TIME rather than as a number of trees.
+#
+# "Equivalent to cutting down N trees" is the version people expect and it is
+# not supportable: felling a tree releases its stored carbon, a stock, while
+# this figure is a flow. Comparing a week of laptop use to a tree's annual
+# uptake is a defensible sentence; comparing it to killing one is not.
+TREE_KG_CO2_PER_YEAR = 21.0
+TREE_GRAMS_CO2_PER_DAY = TREE_KG_CO2_PER_YEAR * 1000 / 365
+
 
 @dataclass(frozen=True)
 class Equivalence:
@@ -98,6 +110,17 @@ def for_energy(watt_hours: float, grams_co2eq: float) -> list[Equivalence]:
             value=kilometres, kind="carbon",
         ))
 
+    tree_days = grams_co2eq / TREE_GRAMS_CO2_PER_DAY
+    if 0.3 <= tree_days <= 500:
+        equivalences.append(Equivalence(
+            label=_plural(
+                tree_days,
+                "day of CO2 uptake by one mature tree",
+                "days of CO2 uptake by one mature tree",
+            ),
+            value=tree_days, kind="carbon",
+        ))
+
     bulb_hours = watt_hours / LED_BULB_WATTS
     if 0.5 <= bulb_hours <= 500:
         equivalences.append(Equivalence(
@@ -105,9 +128,9 @@ def for_energy(watt_hours: float, grams_co2eq: float) -> list[Equivalence]:
             value=bulb_hours, kind="energy",
         ))
 
-    # Three is the point where a row of comparisons stops clarifying and starts
+    # Four is the point where a row of comparisons stops clarifying and starts
     # reading as filler. Order matters because of that cut: kilometres driven
     # sits above LED-bulb hours deliberately, since it is the one comparison
     # that crosses into carbon and the one most readers can picture. Built in
     # the other order first, it was always the item that got dropped.
-    return equivalences[:3]
+    return equivalences[:4]

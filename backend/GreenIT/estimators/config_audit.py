@@ -88,6 +88,8 @@ def audit(settings: dict, observed: dict) -> list[Finding]:
     """
     findings: list[Finding] = []
 
+    findings += _battery_findings(observed)
+    findings += _calibration_findings(observed)
     findings += _sleep_findings(settings, observed)
     findings += _display_findings(settings, observed)
     findings += _brightness_findings(observed)
@@ -132,6 +134,125 @@ def _rank_wake_tasks(names: list[str]) -> list[str]:
 
     # Stable sort, so within each group Windows' own ordering survives.
     return sorted(names, key=rank)
+
+
+BATTERY_POOR_PERCENT = 60
+BATTERY_FAIR_PERCENT = 80
+
+
+def _battery_findings(observed: dict) -> list[Finding]:
+    """
+    Battery wear, which is a carbon finding rather than a convenience one.
+
+    A worn battery is the most common reason a working laptop gets replaced,
+    and manufacturing a replacement emits more than a decade of running the
+    old one. That makes this the highest-leverage row on the whole dashboard
+    even though it has nothing to do with electricity.
+
+    The advice is about charging habits rather than replacement, because
+    replacement is the outcome worth avoiding.
+    """
+    health = observed.get("battery_health_percent")
+    if health is None:
+        return []
+
+    if health < BATTERY_POOR_PERCENT:
+        return [Finding(
+            key="battery_worn",
+            title=f"Battery is at {health:.0f}% of its original capacity",
+            detail=(
+                "Worn batteries are the usual trigger for replacing a laptop "
+                "that still works, and manufacturing a replacement emits more "
+                "carbon than a decade of running this one. Keeping the machine "
+                "in service is worth more than any energy saving on this page."
+            ),
+            action=(
+                "Avoid leaving it plugged in at 100% for long stretches - Dell "
+                "Power Manager and equivalents can cap charging around 80%. If "
+                "runtime is already impractical, ask IT for a battery "
+                "replacement rather than a new machine."
+            ),
+            fixable="you",
+            severity="high",
+        )]
+
+    if health < BATTERY_FAIR_PERCENT:
+        return [Finding(
+            key="battery_wearing",
+            title=f"Battery is at {health:.0f}% of its original capacity",
+            detail=(
+                "Still serviceable, but wear accelerates when a battery is "
+                "held at full charge and warm."
+            ),
+            action=(
+                "Capping charge near 80% in your laptop vendor's power tool "
+                "slows this down considerably."
+            ),
+            fixable="you",
+            severity="medium",
+        )]
+
+    return []
+
+
+def _calibration_findings(observed: dict) -> list[Finding]:
+    """
+    Says out loud when the numbers on this dashboard are estimates.
+
+    Surfaced as a finding rather than a quiet badge because it changes how
+    every other figure on the page should be read. A tool that reports
+    watt-hours to one decimal place while silently guessing its coefficients
+    has misled the reader by omission, however correct its arithmetic.
+    """
+    source = observed.get("calibration_source")
+
+    # Typed in through the IT setup screen rather than swept. It may be an
+    # excellent number - copied from a sweep on an identical unit - or a
+    # guess, and nothing here can tell the difference. Saying so is the whole
+    # reason "entered" exists as a separate provenance: before it did, a
+    # hand-typed profile was stored indistinguishably from a measurement and
+    # switched this warning off entirely.
+    if source == "entered":
+        return [Finding(
+            key="calibration_entered",
+            title="Calibration was entered by hand, not measured",
+            detail=(
+                (observed.get("calibration_notes")
+                 or "Coefficients for this model were typed in rather than "
+                    "produced by a battery-discharge sweep.")
+                + " Figures are only as good as the numbers somebody entered."
+            ),
+            action=(
+                "If this model has never been swept, ask IT to run the "
+                "calibration so the coefficients are measured on the hardware "
+                "rather than assumed."
+            ),
+            fixable="it",
+            # Below "estimated": somebody at least looked at this machine and
+            # made a deliberate claim, which is more than a TDP scaling does.
+            severity="ok",
+        )]
+
+    if source != "estimated":
+        return []
+
+    return [Finding(
+        key="uncalibrated",
+        title="This machine model has not been calibrated",
+        detail=(
+            observed.get("calibration_notes")
+            or "Power coefficients were estimated rather than measured."
+        ),
+        action=(
+            "Figures remain useful for comparing one day with another on this "
+            "machine. Ask IT to run the calibration sweeps on this model to "
+            "make them comparable across the fleet."
+        ),
+        fixable="it",
+        # Medium, not high: the tool still works and the trends are still
+        # real. It is the absolute values that carry an unknown error.
+        severity="medium",
+    )]
 
 
 def _sleep_findings(settings: dict, observed: dict) -> list[Finding]:

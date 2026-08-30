@@ -26,17 +26,62 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATABASE_PATH = PROJECT_ROOT / "GreenIT" / "data" / "ecoinsight.db"
 # Connection
 
+# How long a connection waits for a lock before giving up. The default is
+# five seconds, which sounds generous and is not: /api/summary aggregates
+# over 130k+ rows, and the estimation loop wants to commit every 1.5s.
+BUSY_TIMEOUT_SECONDS = 30.0
+
+_journal_mode_set = False
+
+
 def get_connection() -> sqlite3.Connection:
     """
     Create a SQLite connection.
+
+    WHY WAL, AND WHAT IT FIXES
+    This database has two writers-and-readers on one file: the estimation
+    loop committing a measurement every 1.5 seconds, and the API answering
+    dashboard polls with aggregate scans over the whole measurements table.
+
+    In the default rollback-journal mode a reader blocks a writer, and on
+    2026-08-22 that killed the agent: save_measurement() raised
+    "database is locked" on commit, the exception propagated out of tick()
+    and out of run_forever(), and the collection thread died. The API kept
+    serving, so the dashboard looked healthy while nothing had been recorded
+    for fourteen hours - the precise failure the agent's crash handler was
+    written to make loud, arriving through a path nobody had considered.
+
+    WAL lets readers and the single writer proceed concurrently, which is
+    exactly this workload. The setting is a property of the DATABASE FILE,
+    not the connection, so it survives restarts and only needs setting once
+    per process - hence the flag rather than a PRAGMA on every connect.
+
+    busy_timeout is the belt to WAL's braces: two writers still serialise,
+    so a checkpoint or a concurrent write can still make one wait. Waiting
+    is correct; raising after five seconds is not.
 
     Returns
     -------
     sqlite3.Connection
     """
+    global _journal_mode_set
 
-    connection = sqlite3.connect(DATABASE_PATH)
+    connection = sqlite3.connect(DATABASE_PATH, timeout=BUSY_TIMEOUT_SECONDS)
     connection.row_factory = sqlite3.Row
+
+    if not _journal_mode_set:
+        # Best-effort: a database on a network share cannot use WAL, and
+        # failing to switch is not a reason to refuse to run.
+        try:
+            connection.execute("PRAGMA journal_mode=WAL")
+            # NORMAL rather than FULL: with WAL this only risks losing the
+            # last few commits on an OS crash, and losing a second of power
+            # samples matters far less than fsyncing 40 times a minute on a
+            # laptop this tool is meant to be frugal on.
+            connection.execute("PRAGMA synchronous=NORMAL")
+        except sqlite3.Error:
+            pass
+        _journal_mode_set = True
 
     return connection
 
@@ -525,7 +570,7 @@ TELEMETRY_INTERVAL_SECONDS = 120
 IDLE_THRESHOLD_SECONDS = 15 * 60
 
 
-def get_observed_behaviour(days: int = 7) -> dict:
+def get_observed_behaviour(days: int = 7, end: datetime | None = None) -> dict:
     """
     What the machine actually did, summarised for the configuration audit.
 
@@ -541,7 +586,8 @@ def get_observed_behaviour(days: int = 7) -> dict:
     """
     connection = get_connection()
     cursor = connection.cursor()
-    since = (datetime.now() - timedelta(days=days)).isoformat()
+    end = end or datetime.now()
+    since = (end - timedelta(days=days)).isoformat()
 
     idle_rows, days_seen = cursor.execute(
         "SELECT COUNT(*), COUNT(DISTINCT substr(timestamp, 1, 10)) "
@@ -569,6 +615,25 @@ def get_observed_behaviour(days: int = 7) -> dict:
         "WHERE brightness_percent IS NOT NULL ORDER BY timestamp DESC LIMIT 1",
     ).fetchone()
 
+    # Energy drawn ONLY on the days idle was actually tracked.
+    #
+    # This is the denominator the idle share needs, and getting it wrong was a
+    # real bug: idle_seconds was added partway through this database's life,
+    # so the numerator covered 3 days while the total covered 7. The reported
+    # share came out 5.3% where matched coverage gives 13.8% — understating
+    # avoidable waste by a factor of 2.6 purely through arithmetic.
+    #
+    # Matching them means the ratio answers one question about one period,
+    # instead of dividing a measurement by a period it was never measured over.
+    energy_on_tracked_days = cursor.execute(
+        "SELECT SUM(interval_watt_hours) FROM measurements "
+        "WHERE substr(timestamp, 1, 10) IN ("
+        "  SELECT DISTINCT substr(timestamp, 1, 10) FROM telemetry_history "
+        "  WHERE timestamp >= ? AND idle_seconds IS NOT NULL"
+        ")",
+        (since,),
+    ).fetchone()[0]
+
     idle_minutes_total = (idle_rows or 0) * TELEMETRY_INTERVAL_SECONDS / 60
     connection.close()
 
@@ -582,6 +647,7 @@ def get_observed_behaviour(days: int = 7) -> dict:
         "brightness_percent": brightness[0] if brightness else None,
         "typical_watts": typical_watts,
         "days_tracked": tracked_days,
+        "energy_on_tracked_days_wh": energy_on_tracked_days,
     }
 
 
@@ -593,7 +659,7 @@ WORKDAY_START_HOUR = 8
 WORKDAY_END_HOUR = 19
 
 
-def get_offhours_summary(days: int = 7) -> dict:
+def get_offhours_summary(days: int = 7, end: datetime | None = None) -> dict:
     """
     Energy drawn outside working hours, and the shape of a typical day.
 
@@ -608,7 +674,8 @@ def get_offhours_summary(days: int = 7) -> dict:
     """
     connection = get_connection()
     cursor = connection.cursor()
-    since = (datetime.now() - timedelta(days=days)).isoformat()
+    end = end or datetime.now()
+    since = (end - timedelta(days=days)).isoformat()
 
     # strftime('%w') is 0=Sunday..6=Saturday in SQLite; '%H' is a zero-padded
     # 24-hour clock. Both are computed on the stored local-time string, which
@@ -653,7 +720,7 @@ def get_offhours_summary(days: int = 7) -> dict:
     }
 
 
-def get_period_summary(days: int = 7) -> dict:
+def get_period_summary(days: int = 7, end: datetime | None = None) -> dict:
     """
     Energy and carbon for the last `days`, the period before it, a per-day
     breakdown, and the applications that cost the most.
@@ -665,7 +732,7 @@ def get_period_summary(days: int = 7) -> dict:
     """
     connection = get_connection()
     cursor = connection.cursor()
-    now = datetime.now()
+    now = end or datetime.now()
     current_start = now - timedelta(days=days)
     previous_start = now - timedelta(days=days * 2)
 
@@ -688,8 +755,9 @@ def get_period_summary(days: int = 7) -> dict:
         {"date": date, "watt_hours": watt_hours or 0.0}
         for date, watt_hours in cursor.execute(
             "SELECT substr(timestamp, 1, 10), SUM(interval_watt_hours) "
-            "FROM measurements WHERE timestamp >= ? GROUP BY 1 ORDER BY 1",
-            (current_start.isoformat(),),
+            "FROM measurements WHERE timestamp >= ? AND timestamp < ? "
+            "GROUP BY 1 ORDER BY 1",
+            (current_start.isoformat(), now.isoformat()),
         )
     ]
 
@@ -700,14 +768,14 @@ def get_period_summary(days: int = 7) -> dict:
             # telemetry interval, so each sample stands for that interval's
             # worth of energy — hence the x interval / 3600 to reach Wh.
             "SELECT name, SUM(estimated_watts) * ? / 3600.0 AS wh "
-            "FROM process_samples WHERE timestamp >= ? "
+            "FROM process_samples WHERE timestamp >= ? AND timestamp < ? "
             "GROUP BY name ORDER BY wh DESC LIMIT 5",
-            (TELEMETRY_INTERVAL_SECONDS, current_start.isoformat()),
+            (TELEMETRY_INTERVAL_SECONDS, current_start.isoformat(), now.isoformat()),
         )
     ]
     connection.close()
 
-    behaviour = get_observed_behaviour(days)
+    behaviour = get_observed_behaviour(days, now)
     wasted = behaviour["idle_awake_watt_hours"]
 
     change_percent = None
@@ -724,7 +792,20 @@ def get_period_summary(days: int = 7) -> dict:
     # missing comparison renders as "not enough history", which is honest;
     # a spectacular fake number is not.
     comparable = previous["samples"] >= current["samples"] * 0.25
-    if comparable and previous["watt_hours"] > 1.0:
+
+    # A coefficient change inside either period makes the two halves
+    # incommensurable: the same behaviour converts to different watts on
+    # either side of it. Same principle as the coverage check above - the
+    # arithmetic would succeed and the answer would be about the calibration
+    # rather than about the user.
+    profile_changes = get_profile_changes_between(previous_start, now)
+    change_blocked_reason = None
+    if profile_changes:
+        change_blocked_reason = "calibration_changed"
+    elif not comparable:
+        change_blocked_reason = "insufficient_history"
+
+    if change_blocked_reason is None and previous["watt_hours"] > 1.0:
         change_percent = 100 * (
             current["watt_hours"] - previous["watt_hours"]
         ) / previous["watt_hours"]
@@ -734,15 +815,24 @@ def get_period_summary(days: int = 7) -> dict:
         "current": current,
         "previous": previous,
         "change_percent": change_percent,
+        # Which of the two reasons withheld the comparison, so the dashboard
+        # can say the true one instead of blaming missing history for a
+        # recalibration.
+        "change_blocked_reason": change_blocked_reason,
+        "profile_changes": profile_changes,
         "per_day": per_day,
         "top_applications": [
             {**application, "label": None} for application in top_applications
         ],
         "idle_awake_watt_hours": wasted,
+        # Divided by energy on the tracked days, NOT by the period total —
+        # see get_observed_behaviour. Both halves of this ratio now describe
+        # the same days.
         "idle_awake_share": (
-            wasted / current["watt_hours"]
-            if wasted and current["watt_hours"] > 0 else None
+            wasted / behaviour["energy_on_tracked_days_wh"]
+            if wasted and behaviour["energy_on_tracked_days_wh"] else None
         ),
+        "energy_on_tracked_days_wh": behaviour["energy_on_tracked_days_wh"],
         "days_tracked": behaviour["days_tracked"],
     }
 
@@ -835,3 +925,296 @@ def get_latest_process_samples(limit: int = 10) -> list[sqlite3.Row]:
     ).fetchall()
     connection.close()
     return rows
+
+
+def get_waste_between(start: datetime, end: datetime) -> dict:
+    """
+    Idle-but-awake energy and its share, for an explicit window.
+
+    get_observed_behaviour() answers the same question for a TRAILING window
+    ("the last 7 days"), which is right for the audit and wrong for a goal: a
+    trailing window never ends, so there is no moment at which a target is
+    met or missed. A goal needs a calendar week with a Monday and a deadline,
+    which means bounding both ends rather than only the start.
+
+    The share divides by energy on the days idle was actually tracked, for
+    the reason documented at length in get_observed_behaviour - a numerator
+    covering three days over a denominator covering seven understates waste
+    by the ratio of the two.
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    since, until = start.isoformat(), end.isoformat()
+
+    idle_rows = cursor.execute(
+        "SELECT COUNT(*) FROM telemetry_history "
+        "WHERE timestamp >= ? AND timestamp < ? AND idle_seconds > ?",
+        (since, until, IDLE_THRESHOLD_SECONDS),
+    ).fetchone()[0]
+
+    tracked_days = cursor.execute(
+        "SELECT COUNT(DISTINCT substr(timestamp, 1, 10)) FROM telemetry_history "
+        "WHERE timestamp >= ? AND timestamp < ? AND idle_seconds IS NOT NULL",
+        (since, until),
+    ).fetchone()[0]
+
+    typical_watts = cursor.execute(
+        "SELECT AVG(total_watts) FROM measurements "
+        "WHERE timestamp >= ? AND timestamp < ?",
+        (since, until),
+    ).fetchone()[0]
+
+    # Energy inside the window AND on a day idle was tracked. Both bounds
+    # matter: without the upper one a Monday-start window would pull in the
+    # whole of the preceding Sunday whenever Sunday shared a tracked day.
+    tracked_energy = cursor.execute(
+        "SELECT SUM(interval_watt_hours) FROM measurements "
+        "WHERE timestamp >= ? AND timestamp < ? "
+        "  AND substr(timestamp, 1, 10) IN ("
+        "    SELECT DISTINCT substr(timestamp, 1, 10) FROM telemetry_history "
+        "    WHERE timestamp >= ? AND timestamp < ? AND idle_seconds IS NOT NULL)",
+        (since, until, since, until),
+    ).fetchone()[0]
+
+    total_energy = cursor.execute(
+        "SELECT SUM(interval_watt_hours) FROM measurements "
+        "WHERE timestamp >= ? AND timestamp < ?",
+        (since, until),
+    ).fetchone()[0]
+    connection.close()
+
+    idle_minutes = (idle_rows or 0) * TELEMETRY_INTERVAL_SECONDS / 60
+    wasted_wh = idle_minutes / 60 * typical_watts if typical_watts else None
+
+    return {
+        "start": since,
+        "end": until,
+        "wasted_watt_hours": wasted_wh,
+        "tracked_energy_watt_hours": tracked_energy,
+        "total_watt_hours": total_energy or 0.0,
+        # Returned so callers can restate a watt-hour figure as time - "about
+        # 4 hours of leaving it awake" - without a second query.
+        "typical_watts": typical_watts,
+        "days_tracked": tracked_days,
+        "share": (
+            wasted_wh / tracked_energy
+            if wasted_wh is not None and tracked_energy else None
+        ),
+    }
+
+
+# --- workloads (WSL, and later containers) ---
+
+def _ensure_workload_table(cursor) -> None:
+    """
+    Created on demand rather than only in initialize_database().
+
+    The API process never calls initialize_database() - the agent does - so a
+    dashboard opened on a machine where the agent has not yet run would hit a
+    missing table on every read. Costs microseconds and removes the ordering
+    dependency entirely.
+    """
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS workload_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            -- "wsl" today. Containers and dev servers are the same shape of
+            -- fact, so they join this table rather than getting their own.
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            running INTEGER NOT NULL,
+            -- All nullable: a stopped workload has no CPU rather than 0% of
+            -- one, and the first sample after a restart has no baseline to
+            -- diff against. Storing 0.0 there would read as "measured, and it
+            -- was idle", which is the exact conclusion this table exists to
+            -- support or refuse.
+            cpu_percent REAL,
+            memory_bytes INTEGER,
+            uptime_seconds REAL,
+            attached_sessions INTEGER
+        )
+        """
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_workload_samples_timestamp "
+        "ON workload_samples (kind, timestamp)"
+    )
+
+
+def save_workload_samples(timestamp: datetime, rows: list[dict]) -> None:
+    """`rows` as produced by estimators/workloads.samples_from()."""
+    if not rows:
+        return
+
+    connection = get_connection()
+    cursor = connection.cursor()
+    _ensure_workload_table(cursor)
+    cursor.executemany(
+        "INSERT INTO workload_samples "
+        "(timestamp, kind, name, running, cpu_percent, memory_bytes, "
+        " uptime_seconds, attached_sessions) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (
+                timestamp.isoformat(),
+                row["kind"],
+                row["name"],
+                1 if row["running"] else 0,
+                row.get("cpu_percent"),
+                row.get("memory_bytes"),
+                row.get("uptime_seconds"),
+                row.get("attached_sessions"),
+            )
+            for row in rows
+        ],
+    )
+    connection.commit()
+    connection.close()
+
+
+def get_workload_history(kind: str, days: int = 7) -> dict:
+    """
+    What a workload has actually been doing, aggregated.
+
+    This is what separates a measurement from a guess. A single live sample
+    can say "idle right now", which is worthless advice - a developer between
+    two builds looks identical to a distribution nobody has touched since
+    Monday. Counting the samples over days is what lets the finding say
+    "running 31 of the last 48 hours and never once above 1.4% CPU".
+
+    peak CPU rather than mean is the honest summary for "was it ever busy":
+    a mean over days is dragged to nearly zero by one quiet night and would
+    call an actively used distribution idle.
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    _ensure_workload_table(cursor)
+    since = (datetime.now() - timedelta(days=days)).isoformat()
+
+    row = cursor.execute(
+        "SELECT COUNT(*), "
+        "       SUM(running), "
+        "       MAX(cpu_percent), "
+        "       AVG(cpu_percent), "
+        "       MAX(memory_bytes), "
+        "       SUM(CASE WHEN running = 1 AND attached_sessions = 0 THEN 1 ELSE 0 END) "
+        "FROM workload_samples WHERE kind = ? AND timestamp >= ?",
+        (kind, since),
+    ).fetchone()
+    connection.close()
+
+    samples = row[0] or 0
+    running_samples = row[1] or 0
+
+    return {
+        "samples": samples,
+        "running_samples": running_samples,
+        # Each sample stands for one telemetry interval, the cadence the loop
+        # writes these on.
+        "running_hours": running_samples * TELEMETRY_INTERVAL_SECONDS / 3600,
+        "observed_hours": samples * TELEMETRY_INTERVAL_SECONDS / 3600,
+        "peak_cpu_percent": row[2],
+        "mean_cpu_percent": row[3],
+        "peak_memory_bytes": row[4],
+        "unattended_samples": row[5] or 0,
+        "unattended_hours": (row[5] or 0) * TELEMETRY_INTERVAL_SECONDS / 3600,
+    }
+
+
+# --- calibration profile changes ---
+
+def _ensure_profile_change_table(cursor) -> None:
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS profile_changes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            machine_model TEXT NOT NULL,
+            source TEXT NOT NULL,
+            cpu_watts_per_percent REAL NOT NULL,
+            ram_watts_per_gb REAL NOT NULL,
+            baseline_watts REAL NOT NULL
+        )
+        """
+    )
+
+
+def record_profile_change(profile) -> bool:
+    """
+    Notes the coefficients in force, if they differ from the last note.
+
+    WHY THIS EXISTS
+    A machine can run for weeks on an estimated profile and then be given a
+    measured one. On the development machine those two differ by 5.0 W of
+    baseline against 1.92 W - about 30% of total draw. Every row in
+    `measurements` before the change was computed with one set of constants
+    and every row after with another, so a week-over-week comparison across
+    that moment reports a large improvement that nobody earned.
+
+    That is the same class of error as comparing periods with different
+    sample coverage, which get_period_summary already refuses to do. This
+    table is what lets it refuse this one too.
+
+    Returns whether a new row was written.
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    _ensure_profile_change_table(cursor)
+
+    latest = cursor.execute(
+        "SELECT machine_model, source, cpu_watts_per_percent, "
+        "       ram_watts_per_gb, baseline_watts "
+        "FROM profile_changes ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+
+    current = (
+        profile.machine_model,
+        profile.source,
+        profile.cpu.watts_per_percent_usage,
+        profile.ram.watts_per_gb_used,
+        profile.baseline_watts,
+    )
+
+    # Only on change. The loop calls this at every startup, and an unchanged
+    # profile restarted twice a day would otherwise fill the table with rows
+    # that each look like a discontinuity to the digest.
+    if latest is not None and tuple(latest) == current:
+        connection.close()
+        return False
+
+    cursor.execute(
+        "INSERT INTO profile_changes (timestamp, machine_model, source, "
+        " cpu_watts_per_percent, ram_watts_per_gb, baseline_watts) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (datetime.now().isoformat(), *current),
+    )
+    connection.commit()
+    connection.close()
+    return True
+
+
+def get_profile_changes_between(start: datetime, end: datetime) -> list[dict]:
+    """
+    Coefficient changes inside a window.
+
+    The FIRST recorded profile is excluded: it marks the moment the agent
+    started keeping track, not a change in how anything was measured, and
+    treating it as a discontinuity would suppress the comparison on every
+    machine for its first fortnight.
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    _ensure_profile_change_table(cursor)
+
+    first = cursor.execute(
+        "SELECT MIN(id) FROM profile_changes").fetchone()[0]
+    rows = cursor.execute(
+        "SELECT timestamp, machine_model, source, baseline_watts "
+        "FROM profile_changes "
+        "WHERE timestamp >= ? AND timestamp < ? AND id != ? "
+        "ORDER BY timestamp",
+        (start.isoformat(), end.isoformat(), first if first is not None else -1),
+    ).fetchall()
+    connection.close()
+    return [dict(row) for row in rows]
