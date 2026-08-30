@@ -28,6 +28,8 @@ CONCURRENCY NOTES
    makes CoInitialize() necessary here — see _run_estimation_loop.
 """
 
+import argparse
+import os
 import sys
 import threading
 import traceback
@@ -49,6 +51,42 @@ LOG_PATH = Path(__file__).resolve().parent / "data" / "agent.log"
 # deliberate decision to expose it.
 HOST = "127.0.0.1"
 PORT = 8000
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the EcoInsight local agent")
+    parser.add_argument(
+        "--mode", choices=("user", "it"), default="user",
+        help="session role: regular user or IT setup (default: user)",
+    )
+    parser.add_argument(
+        "--database", type=Path, default=None,
+        help="measurement database path; useful for isolated test sessions",
+    )
+    parser.add_argument(
+        "--port", type=int, default=PORT,
+        help=f"local dashboard port (default: {PORT})",
+    )
+    parser.add_argument(
+        "--machine-key", default=None,
+        help="development-only machine key override for testing setup states",
+    )
+    return parser.parse_args()
+
+
+def configure_session(args: argparse.Namespace) -> None:
+    """Apply process-local session settings before starting worker threads."""
+    if args.database is not None:
+        from GreenIT.database import database
+
+        database.DATABASE_PATH = args.database.resolve()
+        database.DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    if args.machine_key:
+        os.environ["ECOINSIGHT_MACHINE_KEY"] = args.machine_key
+
+    app.state.session_mode = args.mode
+    app.state.database_path = str(args.database.resolve()) if args.database else None
 
 
 def _attach_log() -> None:
@@ -105,6 +143,8 @@ def _run_estimation_loop() -> None:
 
 
 def main() -> None:
+    args = parse_args()
+    configure_session(args)
     _attach_log()
 
     collector = threading.Thread(
@@ -116,8 +156,8 @@ def main() -> None:
     )
     collector.start()
 
-    print(f"EcoInsight agent running — dashboard at http://{HOST}:{PORT}")
-    uvicorn.run(app, host=HOST, port=PORT, log_level="warning")
+    print(f"EcoInsight {args.mode} session running — dashboard at http://{HOST}:{args.port}")
+    uvicorn.run(app, host=HOST, port=args.port, log_level="warning")
 
 
 if __name__ == "__main__":

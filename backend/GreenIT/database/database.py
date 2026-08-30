@@ -570,7 +570,7 @@ TELEMETRY_INTERVAL_SECONDS = 120
 IDLE_THRESHOLD_SECONDS = 15 * 60
 
 
-def get_observed_behaviour(days: int = 7) -> dict:
+def get_observed_behaviour(days: int = 7, end: datetime | None = None) -> dict:
     """
     What the machine actually did, summarised for the configuration audit.
 
@@ -586,7 +586,8 @@ def get_observed_behaviour(days: int = 7) -> dict:
     """
     connection = get_connection()
     cursor = connection.cursor()
-    since = (datetime.now() - timedelta(days=days)).isoformat()
+    end = end or datetime.now()
+    since = (end - timedelta(days=days)).isoformat()
 
     idle_rows, days_seen = cursor.execute(
         "SELECT COUNT(*), COUNT(DISTINCT substr(timestamp, 1, 10)) "
@@ -658,7 +659,7 @@ WORKDAY_START_HOUR = 8
 WORKDAY_END_HOUR = 19
 
 
-def get_offhours_summary(days: int = 7) -> dict:
+def get_offhours_summary(days: int = 7, end: datetime | None = None) -> dict:
     """
     Energy drawn outside working hours, and the shape of a typical day.
 
@@ -673,7 +674,8 @@ def get_offhours_summary(days: int = 7) -> dict:
     """
     connection = get_connection()
     cursor = connection.cursor()
-    since = (datetime.now() - timedelta(days=days)).isoformat()
+    end = end or datetime.now()
+    since = (end - timedelta(days=days)).isoformat()
 
     # strftime('%w') is 0=Sunday..6=Saturday in SQLite; '%H' is a zero-padded
     # 24-hour clock. Both are computed on the stored local-time string, which
@@ -718,7 +720,7 @@ def get_offhours_summary(days: int = 7) -> dict:
     }
 
 
-def get_period_summary(days: int = 7) -> dict:
+def get_period_summary(days: int = 7, end: datetime | None = None) -> dict:
     """
     Energy and carbon for the last `days`, the period before it, a per-day
     breakdown, and the applications that cost the most.
@@ -730,7 +732,7 @@ def get_period_summary(days: int = 7) -> dict:
     """
     connection = get_connection()
     cursor = connection.cursor()
-    now = datetime.now()
+    now = end or datetime.now()
     current_start = now - timedelta(days=days)
     previous_start = now - timedelta(days=days * 2)
 
@@ -753,8 +755,9 @@ def get_period_summary(days: int = 7) -> dict:
         {"date": date, "watt_hours": watt_hours or 0.0}
         for date, watt_hours in cursor.execute(
             "SELECT substr(timestamp, 1, 10), SUM(interval_watt_hours) "
-            "FROM measurements WHERE timestamp >= ? GROUP BY 1 ORDER BY 1",
-            (current_start.isoformat(),),
+            "FROM measurements WHERE timestamp >= ? AND timestamp < ? "
+            "GROUP BY 1 ORDER BY 1",
+            (current_start.isoformat(), now.isoformat()),
         )
     ]
 
@@ -765,14 +768,14 @@ def get_period_summary(days: int = 7) -> dict:
             # telemetry interval, so each sample stands for that interval's
             # worth of energy — hence the x interval / 3600 to reach Wh.
             "SELECT name, SUM(estimated_watts) * ? / 3600.0 AS wh "
-            "FROM process_samples WHERE timestamp >= ? "
+            "FROM process_samples WHERE timestamp >= ? AND timestamp < ? "
             "GROUP BY name ORDER BY wh DESC LIMIT 5",
-            (TELEMETRY_INTERVAL_SECONDS, current_start.isoformat()),
+            (TELEMETRY_INTERVAL_SECONDS, current_start.isoformat(), now.isoformat()),
         )
     ]
     connection.close()
 
-    behaviour = get_observed_behaviour(days)
+    behaviour = get_observed_behaviour(days, now)
     wasted = behaviour["idle_awake_watt_hours"]
 
     change_percent = None
@@ -789,7 +792,20 @@ def get_period_summary(days: int = 7) -> dict:
     # missing comparison renders as "not enough history", which is honest;
     # a spectacular fake number is not.
     comparable = previous["samples"] >= current["samples"] * 0.25
-    if comparable and previous["watt_hours"] > 1.0:
+
+    # A coefficient change inside either period makes the two halves
+    # incommensurable: the same behaviour converts to different watts on
+    # either side of it. Same principle as the coverage check above - the
+    # arithmetic would succeed and the answer would be about the calibration
+    # rather than about the user.
+    profile_changes = get_profile_changes_between(previous_start, now)
+    change_blocked_reason = None
+    if profile_changes:
+        change_blocked_reason = "calibration_changed"
+    elif not comparable:
+        change_blocked_reason = "insufficient_history"
+
+    if change_blocked_reason is None and previous["watt_hours"] > 1.0:
         change_percent = 100 * (
             current["watt_hours"] - previous["watt_hours"]
         ) / previous["watt_hours"]
@@ -799,6 +815,11 @@ def get_period_summary(days: int = 7) -> dict:
         "current": current,
         "previous": previous,
         "change_percent": change_percent,
+        # Which of the two reasons withheld the comparison, so the dashboard
+        # can say the true one instead of blaming missing history for a
+        # recalibration.
+        "change_blocked_reason": change_blocked_reason,
+        "profile_changes": profile_changes,
         "per_day": per_day,
         "top_applications": [
             {**application, "label": None} for application in top_applications
@@ -1099,3 +1120,101 @@ def get_workload_history(kind: str, days: int = 7) -> dict:
         "unattended_samples": row[5] or 0,
         "unattended_hours": (row[5] or 0) * TELEMETRY_INTERVAL_SECONDS / 3600,
     }
+
+
+# --- calibration profile changes ---
+
+def _ensure_profile_change_table(cursor) -> None:
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS profile_changes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            machine_model TEXT NOT NULL,
+            source TEXT NOT NULL,
+            cpu_watts_per_percent REAL NOT NULL,
+            ram_watts_per_gb REAL NOT NULL,
+            baseline_watts REAL NOT NULL
+        )
+        """
+    )
+
+
+def record_profile_change(profile) -> bool:
+    """
+    Notes the coefficients in force, if they differ from the last note.
+
+    WHY THIS EXISTS
+    A machine can run for weeks on an estimated profile and then be given a
+    measured one. On the development machine those two differ by 5.0 W of
+    baseline against 1.92 W - about 30% of total draw. Every row in
+    `measurements` before the change was computed with one set of constants
+    and every row after with another, so a week-over-week comparison across
+    that moment reports a large improvement that nobody earned.
+
+    That is the same class of error as comparing periods with different
+    sample coverage, which get_period_summary already refuses to do. This
+    table is what lets it refuse this one too.
+
+    Returns whether a new row was written.
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    _ensure_profile_change_table(cursor)
+
+    latest = cursor.execute(
+        "SELECT machine_model, source, cpu_watts_per_percent, "
+        "       ram_watts_per_gb, baseline_watts "
+        "FROM profile_changes ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+
+    current = (
+        profile.machine_model,
+        profile.source,
+        profile.cpu.watts_per_percent_usage,
+        profile.ram.watts_per_gb_used,
+        profile.baseline_watts,
+    )
+
+    # Only on change. The loop calls this at every startup, and an unchanged
+    # profile restarted twice a day would otherwise fill the table with rows
+    # that each look like a discontinuity to the digest.
+    if latest is not None and tuple(latest) == current:
+        connection.close()
+        return False
+
+    cursor.execute(
+        "INSERT INTO profile_changes (timestamp, machine_model, source, "
+        " cpu_watts_per_percent, ram_watts_per_gb, baseline_watts) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (datetime.now().isoformat(), *current),
+    )
+    connection.commit()
+    connection.close()
+    return True
+
+
+def get_profile_changes_between(start: datetime, end: datetime) -> list[dict]:
+    """
+    Coefficient changes inside a window.
+
+    The FIRST recorded profile is excluded: it marks the moment the agent
+    started keeping track, not a change in how anything was measured, and
+    treating it as a discontinuity would suppress the comparison on every
+    machine for its first fortnight.
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    _ensure_profile_change_table(cursor)
+
+    first = cursor.execute(
+        "SELECT MIN(id) FROM profile_changes").fetchone()[0]
+    rows = cursor.execute(
+        "SELECT timestamp, machine_model, source, baseline_watts "
+        "FROM profile_changes "
+        "WHERE timestamp >= ? AND timestamp < ? AND id != ? "
+        "ORDER BY timestamp",
+        (start.isoformat(), end.isoformat(), first if first is not None else -1),
+    ).fetchall()
+    connection.close()
+    return [dict(row) for row in rows]

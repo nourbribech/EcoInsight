@@ -55,6 +55,14 @@ class EstimationLoop:
         self._last_telemetry_write: Optional[datetime] = None
         database.initialize_database()
 
+        # Note the coefficients in force before collecting anything with them.
+        # A machine that runs for weeks on an estimated profile and is then
+        # given a measured one produces measurements computed two different
+        # ways - on this machine a 5.0 W baseline against 1.92 W, about 30% of
+        # total draw - and a week-over-week comparison across that moment
+        # would report an improvement nobody earned. Writes only on change.
+        database.record_profile_change(self._calibration_profile)
+
         # Prime psutil's per-process CPU counters. The first reading for each
         # process has no previous value to diff against and comes back 0.0,
         # so discarding one here means the first real sample is meaningful

@@ -1,3 +1,5 @@
+import os
+
 from GreenIT.collectors.hardware import cpu_info
 from GreenIT.collectors.windows import system_identity
 from GreenIT.database.hardware_repository import (
@@ -46,15 +48,22 @@ class HardwareService:
         laptop should produce labelled estimates in the meantime, not
         silence.
         """
-        identity = system_identity.collect()
-        machine_key = system_identity.build_machine_key(identity)
+        override = os.environ.get("ECOINSIGHT_MACHINE_KEY")
+        if override:
+            # Test identities must never be allowed to fall through to the
+            # real WMI identity or a matching hardware.db row.
+            machine_key = override
+            details = {}
+        else:
+            identity = system_identity.collect()
+            machine_key = system_identity.build_machine_key(identity)
+            details = cpu_info.get_cpu_info() or {}
 
         try:
             return self._hardware_repository.get_calibration_profile(machine_key)
         except UnknownMachineModelError:
             pass
 
-        details = cpu_info.get_cpu_info() or {}
         return generic_calibration.estimated_profile(
             machine_model=machine_key,
             cpu_model=details.get("model"),

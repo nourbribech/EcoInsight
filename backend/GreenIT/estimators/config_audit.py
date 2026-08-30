@@ -204,7 +204,36 @@ def _calibration_findings(observed: dict) -> list[Finding]:
     watt-hours to one decimal place while silently guessing its coefficients
     has misled the reader by omission, however correct its arithmetic.
     """
-    if observed.get("calibration_source") != "estimated":
+    source = observed.get("calibration_source")
+
+    # Typed in through the IT setup screen rather than swept. It may be an
+    # excellent number - copied from a sweep on an identical unit - or a
+    # guess, and nothing here can tell the difference. Saying so is the whole
+    # reason "entered" exists as a separate provenance: before it did, a
+    # hand-typed profile was stored indistinguishably from a measurement and
+    # switched this warning off entirely.
+    if source == "entered":
+        return [Finding(
+            key="calibration_entered",
+            title="Calibration was entered by hand, not measured",
+            detail=(
+                (observed.get("calibration_notes")
+                 or "Coefficients for this model were typed in rather than "
+                    "produced by a battery-discharge sweep.")
+                + " Figures are only as good as the numbers somebody entered."
+            ),
+            action=(
+                "If this model has never been swept, ask IT to run the "
+                "calibration so the coefficients are measured on the hardware "
+                "rather than assumed."
+            ),
+            fixable="it",
+            # Below "estimated": somebody at least looked at this machine and
+            # made a deliberate claim, which is more than a TDP scaling does.
+            severity="ok",
+        )]
+
+    if source != "estimated":
         return []
 
     return [Finding(
